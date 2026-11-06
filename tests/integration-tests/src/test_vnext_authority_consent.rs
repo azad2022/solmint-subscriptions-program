@@ -199,7 +199,7 @@ fn vnext_revoke_tombstone_preempts_unsubmitted_authorization() {
         .assert_err(SubscriptionsError::StaleAuthorityGeneration);
 
     let source_state = fetch_account::<TokenAccount>(litesvm, &source);
-    assert_eq!(source_state.delegate, None);
+    assert!(source_state.delegate.is_none());
     assert!(litesvm.get_account(&authority).is_none());
 }
 

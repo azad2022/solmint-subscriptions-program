@@ -486,6 +486,13 @@
             },
             {
               "kind": "structFieldTypeNode",
+              "name": "sourceTokenAccount",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
               "name": "rentPayer",
               "type": {
                 "kind": "publicKeyTypeNode"
@@ -4998,6 +5005,13 @@
           {
             "kind": "variablePdaSeedNode",
             "name": "subscriber",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "sourceTokenAccount",
             "type": {
               "kind": "publicKeyTypeNode"
             }

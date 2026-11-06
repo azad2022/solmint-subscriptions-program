@@ -116,11 +116,8 @@ impl PlanRevisionRegistry {
 
     /// Verifies a supplied PDA and bump.
     pub fn verify_pda(merchant: &Address, plan: &Address, bump: u8) -> Result<Address, ProgramError> {
-        Address::create_program_address(
-            &[Self::SEED, merchant.as_ref(), plan.as_ref(), &[bump]],
-            &crate::ID,
-        )
-        .map_err(|_| SubscriptionsError::PlanRevisionRegistryInvalidPda.into())
+        Address::create_program_address(&[Self::SEED, merchant.as_ref(), plan.as_ref(), &[bump]], &crate::ID)
+            .map_err(|_| SubscriptionsError::PlanRevisionRegistryInvalidPda.into())
     }
 
     /// Confirms the stored Plan and merchant match the supplied accounts.

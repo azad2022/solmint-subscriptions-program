@@ -194,8 +194,14 @@ mod tests {
         registry.advance(0, 0).unwrap(); // update A -> B
         registry.advance(1, 1).unwrap(); // update B -> A (ABA)
         assert!(registry.advance(0, 0).is_err()); // stale approval for original A
-        { let actual = registry.revision; assert_eq!(actual, 2); }
-        { let actual = registry.action_nonce; assert_eq!(actual, 2); }
+        {
+            let actual = registry.revision;
+            assert_eq!(actual, 2);
+        }
+        {
+            let actual = registry.action_nonce;
+            assert_eq!(actual, 2);
+        }
     }
 
     #[test]
@@ -205,7 +211,10 @@ mod tests {
         registry.advance(1, 1).unwrap(); // DeletePlan
         registry.advance(2, 2).unwrap(); // CreatePlan at the same deterministic PDA
         assert!(registry.advance(0, 0).is_err()); // old CreatePlan approval
-        { let actual = registry.revision; assert_eq!(actual, 3); }
+        {
+            let actual = registry.revision;
+            assert_eq!(actual, 3);
+        }
     }
 
     #[test]
@@ -213,11 +222,17 @@ mod tests {
         let mut registry = initialized();
         registry.revision = u64::MAX;
         assert!(registry.advance(u64::MAX, 0).is_err());
-        { let actual = registry.action_nonce; assert_eq!(actual, 0); }
+        {
+            let actual = registry.action_nonce;
+            assert_eq!(actual, 0);
+        }
 
         registry.revision = 0;
         registry.action_nonce = u64::MAX;
         assert!(registry.advance(0, u64::MAX).is_err());
-        { let actual = registry.revision; assert_eq!(actual, 0); }
+        {
+            let actual = registry.revision;
+            assert_eq!(actual, 0);
+        }
     }
 }

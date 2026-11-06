@@ -334,10 +334,6 @@ fn transfer_ix(
     )
 }
 
-fn signed_transaction(litesvm: &crate::tests::utils::LiteSVM, _signers: &[&solana_keypair::Keypair], _payer: &Pubkey, _ix: &Instruction) -> Transaction {
-    unreachable!("constructed in tests with mutable LiteSVM")
-}
-
 #[test]
 fn vnext_plan_revision_rejects_delayed_aba_update() {
     let (litesvm, merchant) = &mut setup();

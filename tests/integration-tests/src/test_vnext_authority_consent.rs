@@ -129,7 +129,8 @@ fn vnext_authorize_and_revoke_preserve_persistent_generation() {
     assert_eq!(authority_source.to_bytes(), source.to_bytes());
 
     let source_state = fetch_account::<TokenAccount>(litesvm, &source);
-    assert_eq!(source_state.delegate, Some(authority));
+    assert!(source_state.delegate.is_some());
+    assert_eq!(source_state.delegate.unwrap(), authority);
     assert_eq!(source_state.delegated_amount, u64::MAX);
 
     let revoke = revoke_ix(
@@ -154,7 +155,7 @@ fn vnext_authorize_and_revoke_preserve_persistent_generation() {
     assert_eq!(status, AUTHORITY_REGISTRY_REVOKED);
 
     let source_state = fetch_account::<TokenAccount>(litesvm, &source);
-    assert_eq!(source_state.delegate, None);
+    assert!(source_state.delegate.is_none());
     assert_eq!(source_state.delegated_amount, 0);
     assert!(litesvm.get_account(&authority).is_none());
 }

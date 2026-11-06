@@ -214,7 +214,7 @@ The final design must enumerate every transfer path and every helper/CPI route t
 
 ### 5.1 Persistent Subscription lifecycle identity
 
-A separate persistent lifecycle lineage is required for each logical Subscription identity (at minimum the existing Plan/subscriber relationship). The current Subscription PDA is closable/reusable, so placing the only revision in that PDA cannot prevent ABA after close/recreate.
+A separate persistent lifecycle lineage is required for each exact logical Subscription identity: (Plan PDA, subscriber, source token account). The source token account is part of the identity so two consent lineages for the same subscriber/Plan cannot share a lifecycle revision. The current Subscription PDA is closable/reusable, so placing the only revision in that PDA cannot prevent ABA after close/recreate.
 
 The final design must specify:
 
@@ -338,7 +338,7 @@ The Authority is closeable on revoke; its rent is returned to the recorded payer
 
 #### Persistent lifecycle revision v1 accounts — selected state slices
 
-- `SubscriptionLifecycleRegistry`: discriminator **6**, version1, **116 bytes**, seeds `["subscriptionLifecycle", plan_pda, subscriber]`. It stores Plan, subscriber, recorded payer, monotonic revision and action nonce.
+- `SubscriptionLifecycleRegistry`: discriminator **6**, version1, **148 bytes**, seeds `["subscriptionLifecycle", plan_pda, subscriber, source_token_account]`. It stores Plan, subscriber, exact source token account, recorded payer, monotonic revision and action nonce.
 - `PlanRevisionRegistry`: discriminator **7**, version1, **116 bytes**, seeds `["planRevision", merchant, plan_pda]`. It stores Plan, merchant, recorded payer, monotonic revision and action nonce.
 - Both are designed as persistent, non-closeable lineages. Their state methods use checked increments and expected revision/nonce comparisons.
 

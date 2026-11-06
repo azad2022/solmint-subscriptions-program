@@ -4,6 +4,8 @@
 //! instruction data) and, where applicable, an inline data payload. The Codama
 //! annotations on each variant describe the required accounts.
 
+pub mod authority_consent;
+pub mod authorize_subscription_authority_vnext;
 pub mod cancel_subscription;
 pub mod cancel_subscription_now;
 pub mod close_subscription_authority;
@@ -23,6 +25,7 @@ pub mod revoke_abandoned_delegation;
 pub mod revoke_abandoned_subscription;
 pub mod revoke_delegation;
 pub mod revoke_subscription_authority;
+pub mod revoke_subscription_authority_vnext;
 pub mod transfer_fixed_delegation;
 pub mod transfer_recurring_delegation;
 pub mod transfer_subscription;
@@ -35,6 +38,7 @@ use codama::CodamaInstructions;
 use pinocchio::error::ProgramError;
 
 use crate::event_engine::EMIT_EVENT_IX_DISC;
+pub use authority_consent::AuthorityActionData;
 use crate::instructions::cancel_subscription_now::CancelSubscriptionNowData;
 use crate::instructions::create_plan::PlanData;
 use crate::instructions::resume_subscription::ResumeData;
@@ -394,6 +398,49 @@ pub enum SubscriptionsInstruction {
     ))]
     CancelSubscriptionNow(#[codama(name = "cancel_subscription_now_data")] CancelSubscriptionNowData) = 17,
 
+
+    #[codama(account(name = "subscriber", signer, writable, docs = "The subscriber who authorizes the exact source token account"))]
+    #[codama(account(
+        name = "registry",
+        writable,
+        docs = "Persistent Authority Consent Registry keyed by subscriber, mint and source account",
+        default_value = pda("authorityConsentRegistry", [seed("subscriber", account("subscriber")), seed("mint", account("token_mint")), seed("sourceTokenAccount", account("source_token_account"))])
+    ))]
+    #[codama(account(
+        name = "authority",
+        writable,
+        docs = "VNext token-delegate Authority for the exact source account",
+        default_value = pda("vnextSubscriptionAuthority", [seed("subscriber", account("subscriber")), seed("mint", account("token_mint")), seed("sourceTokenAccount", account("source_token_account"))])
+    ))]
+    #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
+    #[codama(account(name = "source_token_account", writable, docs = "Customer-owned non-ATA token account"))]
+    #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
+    #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
+    #[codama(account(name = "payer", signer, writable, optional, docs = "Optional sponsor for the closeable VNext Authority account; the subscriber funds the permanent Registry"))]
+    #[codama(optional_account_strategy = omitted)]
+    AuthorizeSubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 18,
+
+    #[codama(account(name = "subscriber", signer, writable, docs = "The subscriber invalidating the VNext Authority consent"))]
+    #[codama(account(
+        name = "registry",
+        writable,
+        docs = "Persistent Authority Consent Registry keyed by subscriber, mint and source account",
+        default_value = pda("authorityConsentRegistry", [seed("subscriber", account("subscriber")), seed("mint", account("token_mint")), seed("sourceTokenAccount", account("source_token_account"))])
+    ))]
+    #[codama(account(
+        name = "authority",
+        writable,
+        docs = "VNext token-delegate Authority; may be absent for a tombstone invalidation",
+        default_value = pda("vnextSubscriptionAuthority", [seed("subscriber", account("subscriber")), seed("mint", account("token_mint")), seed("sourceTokenAccount", account("source_token_account"))])
+    ))]
+    #[codama(account(name = "token_mint", docs = "Mint used as part of the Registry identity"))]
+    #[codama(account(name = "source_token_account", writable, docs = "Exact source account; may be closed for tombstone-only invalidation"))]
+    #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
+    #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
+    #[codama(account(name = "receiver", writable, optional, docs = "Required when closing a sponsored Authority; must match its recorded rent payer"))]
+    #[codama(optional_account_strategy = omitted)]
+    RevokeSubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 19,
+
     #[codama(skip)]
     #[codama(account(
         name = "event_authority",
@@ -457,6 +504,14 @@ impl SubscriptionsInstruction {
                 Ok(Self::ResumeSubscription(loaded.clone()))
             }
             revoke_subscription_authority::DISCRIMINATOR => Ok(Self::RevokeSubscriptionAuthority),
+            authorize_subscription_authority_vnext::DISCRIMINATOR => {
+                let loaded = AuthorityActionData::load(rest)?;
+                Ok(Self::AuthorizeSubscriptionAuthorityVNext(loaded.clone()))
+            }
+            revoke_subscription_authority_vnext::DISCRIMINATOR => {
+                let loaded = AuthorityActionData::load(rest)?;
+                Ok(Self::RevokeSubscriptionAuthorityVNext(loaded.clone()))
+            }
             revoke_abandoned_delegation::DISCRIMINATOR => Ok(Self::RevokeAbandonedDelegation),
             revoke_abandoned_subscription::DISCRIMINATOR => Ok(Self::RevokeAbandonedSubscription),
             &EMIT_EVENT_IX_DISC => Ok(Self::EmitEvent),
@@ -484,6 +539,8 @@ impl fmt::Display for SubscriptionsInstruction {
             Self::CancelSubscriptionNow(_) => write!(f, "cancel_subscription_now"),
             Self::ResumeSubscription(_) => write!(f, "resume_subscription"),
             Self::RevokeSubscriptionAuthority => write!(f, "revoke_subscription_authority"),
+            Self::AuthorizeSubscriptionAuthorityVNext(_) => write!(f, "authorize_subscription_authority_vnext"),
+            Self::RevokeSubscriptionAuthorityVNext(_) => write!(f, "revoke_subscription_authority_vnext"),
             Self::RevokeAbandonedDelegation => write!(f, "revoke_abandoned_delegation"),
             Self::RevokeAbandonedSubscription => write!(f, "revoke_abandoned_subscription"),
             Self::EmitEvent => write!(f, "emit_event"),

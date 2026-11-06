@@ -8,13 +8,12 @@ use pinocchio_token::instructions::Revoke as RevokeSpl;
 use pinocchio_token_2022::instructions::Revoke as Revoke2022;
 
 use crate::{
-    check_token_account_mint,
-    check_token_account_owner,
+    check_token_account_mint, check_token_account_owner,
     constants::TOKEN_2022_PROGRAM_ID,
     get_token_account_delegate,
     state::{AuthorityConsentRegistry, VNextSubscriptionAuthority},
-    AccountCheck, AccountClose, ProgramAccount, ProgramAccountInit, SignerAccount,
-    SubscriptionsError, SystemAccount, TokenAccountInterface, TokenProgramInterface, WritableAccount,
+    AccountCheck, AccountClose, ProgramAccount, ProgramAccountInit, SignerAccount, SubscriptionsError, SystemAccount,
+    TokenAccountInterface, TokenProgramInterface, WritableAccount,
 };
 
 /// Discriminator for explicit VNext Authority invalidation.
@@ -42,11 +41,8 @@ pub fn process(accounts: &mut [AccountView], data: &crate::AuthorityActionData) 
         return Err(SubscriptionsError::InvalidInstructionData.into());
     }
 
-    let (registry_address, registry_bump) = AuthorityConsentRegistry::find_pda(
-        subscriber.address(),
-        token_mint.address(),
-        source_token_account.address(),
-    );
+    let (registry_address, registry_bump) =
+        AuthorityConsentRegistry::find_pda(subscriber.address(), token_mint.address(), source_token_account.address());
     if registry_address != *registry.address() {
         return Err(SubscriptionsError::AuthorityConsentRegistryInvalidPda.into());
     }
@@ -150,12 +146,8 @@ pub fn process(accounts: &mut [AccountView], data: &crate::AuthorityActionData) 
     // source account even after the Authority PDA was closed, remove it here.
     if delegate == Some(authority_address) {
         if token_program.address().eq(&TOKEN_2022_PROGRAM_ID) {
-            Revoke2022 {
-                source: source_token_account,
-                authority: subscriber,
-                token_program: token_program.address(),
-            }
-            .invoke()?;
+            Revoke2022 { source: source_token_account, authority: subscriber, token_program: token_program.address() }
+                .invoke()?;
         } else {
             RevokeSpl::new(source_token_account, subscriber).invoke()?;
         }

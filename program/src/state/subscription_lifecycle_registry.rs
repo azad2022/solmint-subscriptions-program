@@ -12,20 +12,22 @@ use crate::{state::common::AccountDiscriminator, SubscriptionsError};
 
 /// Persistent lifecycle registry for one exact (Plan PDA, subscriber) identity.
 ///
-/// PDA seeds: ["subscriptionLifecycle", plan_pda, subscriber].
+/// PDA seeds: ["subscriptionLifecycle", plan_pda, subscriber, source_token_account].
 ///
 /// Layout (little-endian):
 /// - 0 discriminator, 1 version, 2 bump, 3 reserved
 /// - 4..36 Plan PDA
 /// - 36..68 subscriber
-/// - 68..100 original rent payer
-/// - 100..108 revision (u64)
-/// - 108..116 action nonce (u64)
+/// - 68..100 exact source token account
+/// - 100..132 original rent payer
+/// - 132..140 revision (u64)
+/// - 140..148 action nonce (u64)
 #[repr(C, packed)]
 #[derive(CodamaAccount)]
 #[codama(seed(type = string(utf8), value = "subscriptionLifecycle"))]
 #[codama(seed(name = "plan", type = public_key))]
 #[codama(seed(name = "subscriber", type = public_key))]
+#[codama(seed(name = "sourceTokenAccount", type = public_key))]
 pub struct SubscriptionLifecycleRegistry {
     /// Account discriminator.
     pub discriminator: u8,
@@ -39,6 +41,8 @@ pub struct SubscriptionLifecycleRegistry {
     pub plan: Address,
     /// Subscriber wallet.
     pub subscriber: Address,
+    /// Exact source token account for this subscription consent lineage.
+    pub source_token_account: Address,
     /// Original account rent payer.
     pub rent_payer: Address,
     /// Monotonic lifecycle incarnation revision.
@@ -50,7 +54,7 @@ pub struct SubscriptionLifecycleRegistry {
 impl SubscriptionLifecycleRegistry {
     /// Exact v1 account length.
     pub const LEN: usize = size_of::<Self>();
-    pub const V1_LEN: usize = 116;
+    pub const V1_LEN: usize = 148;
     pub const VERSION: u8 = 1;
     pub const SEED: &'static [u8] = b"subscriptionLifecycle";
 
@@ -59,6 +63,7 @@ impl SubscriptionLifecycleRegistry {
         bytes: &mut [u8],
         plan: &Address,
         subscriber: &Address,
+        source_token_account: &Address,
         rent_payer: &Address,
         bump: u8,
     ) -> Result<(), ProgramError> {
@@ -72,6 +77,7 @@ impl SubscriptionLifecycleRegistry {
         account.reserved = 0;
         account.plan = *plan;
         account.subscriber = *subscriber;
+        account.source_token_account = *source_token_account;
         account.rent_payer = *rent_payer;
         account.revision = 0;
         account.action_nonce = 0;
@@ -110,8 +116,11 @@ impl SubscriptionLifecycleRegistry {
     }
 
     /// Finds the canonical lifecycle Registry PDA.
-    pub fn find_pda(plan: &Address, subscriber: &Address) -> (Address, u8) {
-        Address::find_program_address(&[Self::SEED, plan.as_ref(), subscriber.as_ref()], &crate::ID)
+    pub fn find_pda(plan: &Address, subscriber: &Address, source_token_account: &Address) -> (Address, u8) {
+        Address::find_program_address(
+            &[Self::SEED, plan.as_ref(), subscriber.as_ref(), source_token_account.as_ref()],
+            &crate::ID,
+        )
     }
 
     /// Verifies a supplied PDA and bump.
@@ -126,11 +135,15 @@ impl SubscriptionLifecycleRegistry {
         registry_address: &Address,
         plan: &Address,
         subscriber: &Address,
+        source_token_account: &Address,
     ) -> Result<(), ProgramError> {
-        if self.plan != *plan || self.subscriber != *subscriber {
+        if self.plan != *plan
+            || self.subscriber != *subscriber
+            || self.source_token_account != *source_token_account
+        {
             return Err(SubscriptionsError::LifecycleRegistryIdentityMismatch.into());
         }
-        let expected = Self::verify_pda(plan, subscriber, self.bump)?;
+        let expected = Self::verify_pda(plan, subscriber, source_token_account, self.bump)?;
         if expected != *registry_address {
             return Err(SubscriptionsError::SubscriptionLifecycleRegistryInvalidPda.into());
         }
@@ -169,24 +182,27 @@ mod tests {
 
     fn initialized() -> SubscriptionLifecycleRegistry {
         let mut bytes = [0u8; SubscriptionLifecycleRegistry::LEN];
-        SubscriptionLifecycleRegistry::init(&mut bytes, &addr(1), &addr(2), &addr(3), 9).unwrap();
+        SubscriptionLifecycleRegistry::init(&mut bytes, &addr(1), &addr(2), &addr(3), &addr(4), 9).unwrap();
         unsafe { core::ptr::read_unaligned(bytes.as_ptr() as *const SubscriptionLifecycleRegistry) }
     }
 
     #[test]
     fn v1_layout_is_frozen_at_116_bytes() {
         assert_eq!(SubscriptionLifecycleRegistry::LEN, SubscriptionLifecycleRegistry::V1_LEN);
-        assert_eq!(core::mem::offset_of!(SubscriptionLifecycleRegistry, revision), 100);
-        assert_eq!(core::mem::offset_of!(SubscriptionLifecycleRegistry, action_nonce), 108);
+        assert_eq!(core::mem::offset_of!(SubscriptionLifecycleRegistry, source_token_account), 68);
+        assert_eq!(core::mem::offset_of!(SubscriptionLifecycleRegistry, revision), 132);
+        assert_eq!(core::mem::offset_of!(SubscriptionLifecycleRegistry, action_nonce), 140);
     }
 
     #[test]
-    fn pda_binds_plan_and_subscriber() {
-        let p1 = SubscriptionLifecycleRegistry::find_pda(&addr(1), &addr(3)).0;
-        let p2 = SubscriptionLifecycleRegistry::find_pda(&addr(2), &addr(3)).0;
-        let p3 = SubscriptionLifecycleRegistry::find_pda(&addr(1), &addr(4)).0;
+    fn pda_binds_plan_subscriber_and_source_account() {
+        let p1 = SubscriptionLifecycleRegistry::find_pda(&addr(1), &addr(2), &addr(3)).0;
+        let p2 = SubscriptionLifecycleRegistry::find_pda(&addr(4), &addr(2), &addr(3)).0;
+        let p3 = SubscriptionLifecycleRegistry::find_pda(&addr(1), &addr(5), &addr(3)).0;
+        let p4 = SubscriptionLifecycleRegistry::find_pda(&addr(1), &addr(2), &addr(6)).0;
         assert_ne!(p1, p2);
         assert_ne!(p1, p3);
+        assert_ne!(p1, p4);
     }
 
     #[test]

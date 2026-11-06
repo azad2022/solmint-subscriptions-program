@@ -53,6 +53,23 @@ impl TryFrom<u32> for SubscriptionsError {
             135 => Ok(Self::DelegationAlreadyExists),
             136 => Ok(Self::StaleSubscriptionAuthority),
             137 => Ok(Self::TransferHookTooManyAccounts),
+            138 => Ok(Self::AuthorityConsentRegistryInvalidPda),
+            139 => Ok(Self::AuthorityConsentRegistryIdentityMismatch),
+            140 => Ok(Self::AuthorityAlreadyActive),
+            141 => Ok(Self::StaleAuthorityGeneration),
+            142 => Ok(Self::StaleAuthorityActionNonce),
+            143 => Ok(Self::AuthorityActionExpired),
+            144 => Ok(Self::AuthorityActionDeadlineTooFar),
+            145 => Ok(Self::LifecycleRegistryIdentityMismatch),
+            146 => Ok(Self::StaleSubscriptionLifecycleRevision),
+            147 => Ok(Self::StalePlanRevision),
+            148 => Ok(Self::StaleLifecycleActionNonce),
+            149 => Ok(Self::PlanRevisionRegistryInvalidPda),
+            150 => Ok(Self::SubscriptionLifecycleRegistryInvalidPda),
+            151 => Ok(Self::VNextAuthorityInvalidPda),
+            152 => Ok(Self::VNextAuthorityIdentityMismatch),
+            153 => Ok(Self::NonAssociatedSourceAccountRequired),
+            154 => Ok(Self::ForeignTokenDelegatePresent),
             // Fixed delegation errors (300-399)
             300 => Ok(Self::AmountExceedsLimit),
             301 => Ok(Self::FixedDelegationExpiryInPast),
@@ -200,6 +217,46 @@ pub enum SubscriptionsError {
     /// Reserved for backwards compatibility.
     #[error("Too many transfer hook accounts provided")]
     TransferHookTooManyAccounts,
+
+    // --- Authority Consent Registry errors (138--144) ---
+    #[error("Invalid Authority Consent Registry PDA derivation")]
+    AuthorityConsentRegistryInvalidPda = 138,
+    #[error("Authority Consent Registry identity does not match supplied accounts")]
+    AuthorityConsentRegistryIdentityMismatch,
+    #[error("Authority is already active; Init cannot be used as implicit reauthorization")]
+    AuthorityAlreadyActive,
+    #[error("Authority generation does not match the signed expected generation")]
+    StaleAuthorityGeneration,
+    #[error("Authority action nonce is stale or has already been consumed")]
+    StaleAuthorityActionNonce,
+    #[error("Signed Authority action has expired")]
+    AuthorityActionExpired,
+    #[error("Signed Authority action validity exceeds the protocol maximum")]
+    AuthorityActionDeadlineTooFar,
+
+    // --- Lifecycle revision registry errors (145--150) ---
+    #[error("Lifecycle registry identity does not match supplied accounts")]
+    LifecycleRegistryIdentityMismatch = 145,
+    #[error("Subscription lifecycle revision is stale")]
+    StaleSubscriptionLifecycleRevision,
+    #[error("Plan revision is stale")]
+    StalePlanRevision,
+    #[error("Lifecycle action nonce is stale or has already been consumed")]
+    StaleLifecycleActionNonce,
+    #[error("Invalid Plan revision Registry PDA derivation")]
+    PlanRevisionRegistryInvalidPda,
+    #[error("Invalid Subscription lifecycle Registry PDA derivation")]
+    SubscriptionLifecycleRegistryInvalidPda,
+
+    // --- VNext Authority errors (151--154) ---
+    #[error("Invalid VNext SubscriptionAuthority PDA derivation")]
+    VNextAuthorityInvalidPda = 151,
+    #[error("VNext SubscriptionAuthority identity or generation does not match")]
+    VNextAuthorityIdentityMismatch,
+    #[error("VNext source token account must not be the canonical Associated Token Account")]
+    NonAssociatedSourceAccountRequired,
+    #[error("Source token account already has a different token delegate")]
+    ForeignTokenDelegatePresent,
 
     // --- Fixed delegation errors (300--399) ---
     #[error("Transfer amount exceeds delegation limit")]

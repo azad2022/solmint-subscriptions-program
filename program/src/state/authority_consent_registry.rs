@@ -226,7 +226,10 @@ impl AuthorityConsentRegistry {
         &mut self,
         expected_generation: u64,
         expected_nonce: u64,
+        now_ts: i64,
+        not_after_ts: i64,
     ) -> Result<u64, ProgramError> {
+        Self::validate_action_deadline(now_ts, not_after_ts)?;
         if self.status == AUTHORITY_REGISTRY_ACTIVE {
             return Err(SubscriptionsError::AuthorityAlreadyActive.into());
         }
@@ -266,7 +269,10 @@ impl AuthorityConsentRegistry {
         &mut self,
         expected_authority_generation: u64,
         expected_nonce: u64,
+        now_ts: i64,
+        not_after_ts: i64,
     ) -> Result<u64, ProgramError> {
+        Self::validate_action_deadline(now_ts, not_after_ts)?;
         if self.revoke_nonce != expected_nonce {
             return Err(SubscriptionsError::StaleAuthorityActionNonce.into());
         }
@@ -369,7 +375,7 @@ mod tests {
     fn authorize_increments_generation_and_its_own_nonce() {
         let mut registry = initialized();
         assert_eq!(registry.authority_generation, 0);
-        assert_eq!(registry.authorize(0, 0).unwrap(), 1);
+        assert_eq!(registry.authorize(0, 0, 1_000, 1_900).unwrap(), 1);
         assert_eq!(registry.authority_generation, 1);
         assert_eq!(registry.authorize_nonce, 1);
         assert_eq!(registry.status, AUTHORITY_REGISTRY_ACTIVE);
@@ -379,7 +385,7 @@ mod tests {
     fn duplicate_authorize_never_reapproves_an_active_generation() {
         let mut registry = initialized();
         registry.authorize(0, 0).unwrap();
-        let result = registry.authorize(0, 0);
+        let result = registry.authorize(0, 0, 1_000, 1_900);
         assert_eq!(result.unwrap_err(), ProgramError::Custom(SubscriptionsError::AuthorityAlreadyActive as u32));
         assert_eq!(registry.authority_generation, 1);
         assert_eq!(registry.authorize_nonce, 1);
@@ -389,7 +395,7 @@ mod tests {
     fn revoke_after_authorize_invalidates_the_active_generation() {
         let mut registry = initialized();
         registry.authorize(0, 0).unwrap();
-        assert_eq!(registry.revoke(1, 0).unwrap(), 2);
+        assert_eq!(registry.revoke(1, 0, 1_000, 1_900).unwrap(), 2);
         assert_eq!(registry.status, AUTHORITY_REGISTRY_REVOKED);
         assert_eq!(registry.authority_generation, 2);
         assert_eq!(registry.revoke_nonce, 1);
@@ -421,7 +427,7 @@ mod tests {
         registry.authorize(0, 0).unwrap();
         registry.revoke(1, 0).unwrap();
         // The next authorize would create generation 3 from Registry generation 2.
-        assert_eq!(registry.revoke(3, 1).unwrap(), 4);
+        assert_eq!(registry.revoke(3, 1, 1_000, 1_900).unwrap(), 4);
         assert!(registry.authorize(2, 1).is_err());
     }
 
@@ -431,7 +437,7 @@ mod tests {
         registry.authorize(0, 0).unwrap();
         registry.revoke(1, 0).unwrap();
         registry.authorize(2, 1).unwrap();
-        assert!(registry.revoke(1, 1).is_err());
+        assert!(registry.revoke(1, 1, 1_000, 1_900).is_err());
         assert_eq!(registry.status, AUTHORITY_REGISTRY_ACTIVE);
         assert_eq!(registry.authority_generation, 3);
     }
@@ -440,18 +446,18 @@ mod tests {
     fn generation_and_nonce_overflow_fail_without_partial_state_change() {
         let mut registry = initialized();
         registry.authority_generation = u64::MAX;
-        assert!(registry.authorize(u64::MAX, 0).is_err());
+        assert!(registry.authorize(u64::MAX, 0, 1_000, 1_900).is_err());
         assert_eq!(registry.authority_generation, u64::MAX);
         assert_eq!(registry.status, AUTHORITY_REGISTRY_REVOKED);
 
         registry.authority_generation = 0;
         registry.authorize_nonce = u64::MAX;
-        assert!(registry.authorize(0, u64::MAX).is_err());
+        assert!(registry.authorize(0, u64::MAX, 1_000, 1_900).is_err());
         assert_eq!(registry.authority_generation, 0);
 
         registry.authorize_nonce = 0;
         registry.revoke_nonce = u64::MAX;
-        assert!(registry.revoke(1, u64::MAX).is_err());
+        assert!(registry.revoke(1, u64::MAX, 1_000, 1_900).is_err());
         assert_eq!(registry.authority_generation, 0);
     }
 

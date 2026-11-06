@@ -343,14 +343,14 @@ fn vnext_plan_revision_rejects_delayed_aba_update() {
 
     let stale = update_plan_ix(&merchant.pubkey(), plan, registry, 1, 1, "A", "C");
     let stale_signed = Transaction::new(
-        &[merchant],
+        &[&*merchant],
         Message::new(std::slice::from_ref(&stale), Some(&merchant.pubkey())),
         litesvm.latest_blockhash(),
     );
 
     let to_b = update_plan_ix(&merchant.pubkey(), plan, registry, 1, 1, "A", "B");
     let tx_b = Transaction::new(
-        &[merchant],
+        &[&*merchant],
         Message::new(std::slice::from_ref(&to_b), Some(&merchant.pubkey())),
         litesvm.latest_blockhash(),
     );
@@ -358,7 +358,7 @@ fn vnext_plan_revision_rejects_delayed_aba_update() {
 
     let to_a = update_plan_ix(&merchant.pubkey(), plan, registry, 2, 2, "B", "A");
     let tx_a = Transaction::new(
-        &[merchant],
+        &[&*merchant],
         Message::new(std::slice::from_ref(&to_a), Some(&merchant.pubkey())),
         litesvm.latest_blockhash(),
     );
@@ -441,7 +441,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         1,
     );
     let stale_subscribe_signed = Transaction::new(
-        &[subscriber],
+        &[&*subscriber],
         Message::new(std::slice::from_ref(&stale_subscribe), Some(&subscriber.pubkey())),
         litesvm.latest_blockhash(),
     );
@@ -474,7 +474,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     // Ordinary cancellation and Resume each consume a distinct lifecycle revision.
     let cancel = cancel_ix(&subscriber.pubkey(), plan, plan_revision_registry, subscription, lifecycle_registry, 1, 1);
     let cancel_signed = Transaction::new(
-        &[subscriber],
+        &[&*subscriber],
         Message::new(std::slice::from_ref(&cancel), Some(&subscriber.pubkey())),
         litesvm.latest_blockhash(),
     );
@@ -494,7 +494,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         2,
     );
     let resume_signed = Transaction::new(
-        &[subscriber],
+        &[&*subscriber],
         Message::new(std::slice::from_ref(&resume), Some(&subscriber.pubkey())),
         litesvm.latest_blockhash(),
     );
@@ -536,7 +536,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         3,
     );
     let cancel_now_signed = Transaction::new(
-        &[subscriber, &merchant],
+        &[&*subscriber, &merchant],
         Message::new(std::slice::from_ref(&cancel_now), Some(&merchant.pubkey())),
         litesvm.latest_blockhash(),
     );
@@ -563,7 +563,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         4,
     );
     let resubscribe_signed = Transaction::new(
-        &[subscriber],
+        &[&*subscriber],
         Message::new(std::slice::from_ref(&resubscribe), Some(&subscriber.pubkey())),
         litesvm.latest_blockhash(),
     );

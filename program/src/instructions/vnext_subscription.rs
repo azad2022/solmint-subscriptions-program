@@ -899,6 +899,13 @@ mod transfer_freshness_tests {
         }
     }
 
+    fn assert_custom_error(result: ProgramResult, expected: SubscriptionsError) {
+        match result {
+            Err(ProgramError::Custom(actual)) => assert_eq!(actual, expected as u32),
+            other => panic!("expected custom error {:?}, received {:?}", expected, other),
+        }
+    }
+
     #[test]
     fn vnext_transfer_payload_layout_is_frozen() {
         assert_eq!(VNextTransferData::LEN, 120);
@@ -921,39 +928,39 @@ mod transfer_freshness_tests {
     #[test]
     fn transfer_rejects_stale_plan_revision_or_nonce() {
         let data = payload();
-        assert_eq!(
-            validate_transfer_freshness(&data, 100, 5, 7, 9, 12, 3).unwrap_err(),
-            ProgramError::Custom(SubscriptionsError::StalePlanRevision as u32)
+        assert_custom_error(
+            validate_transfer_freshness(&data, 100, 5, 7, 9, 12, 3),
+            SubscriptionsError::StalePlanRevision,
         );
-        assert_eq!(
-            validate_transfer_freshness(&data, 100, 4, 8, 9, 12, 3).unwrap_err(),
-            ProgramError::Custom(SubscriptionsError::StalePlanRevision as u32)
+        assert_custom_error(
+            validate_transfer_freshness(&data, 100, 4, 8, 9, 12, 3),
+            SubscriptionsError::StalePlanRevision,
         );
     }
 
     #[test]
     fn transfer_rejects_stale_lifecycle_revision_or_nonce() {
         let data = payload();
-        assert_eq!(
-            validate_transfer_freshness(&data, 100, 4, 7, 10, 12, 3).unwrap_err(),
-            ProgramError::Custom(SubscriptionsError::StaleSubscriptionLifecycleRevision as u32)
+        assert_custom_error(
+            validate_transfer_freshness(&data, 100, 4, 7, 10, 12, 3),
+            SubscriptionsError::StaleSubscriptionLifecycleRevision,
         );
-        assert_eq!(
-            validate_transfer_freshness(&data, 100, 4, 7, 9, 13, 3).unwrap_err(),
-            ProgramError::Custom(SubscriptionsError::StaleLifecycleActionNonce as u32)
+        assert_custom_error(
+            validate_transfer_freshness(&data, 100, 4, 7, 9, 13, 3),
+            SubscriptionsError::StaleLifecycleActionNonce,
         );
     }
 
     #[test]
     fn transfer_rejects_old_authority_generation_and_expired_deadline() {
         let data = payload();
-        assert_eq!(
-            validate_transfer_freshness(&data, 100, 4, 7, 9, 12, 4).unwrap_err(),
-            ProgramError::Custom(SubscriptionsError::VNextAuthorityIdentityMismatch as u32)
+        assert_custom_error(
+            validate_transfer_freshness(&data, 100, 4, 7, 9, 12, 4),
+            SubscriptionsError::VNextAuthorityIdentityMismatch,
         );
-        assert_eq!(
-            validate_transfer_freshness(&data, 201, 4, 7, 9, 12, 3).unwrap_err(),
-            ProgramError::Custom(SubscriptionsError::AuthorityActionExpired as u32)
+        assert_custom_error(
+            validate_transfer_freshness(&data, 201, 4, 7, 9, 12, 3),
+            SubscriptionsError::AuthorityActionExpired,
         );
     }
 }

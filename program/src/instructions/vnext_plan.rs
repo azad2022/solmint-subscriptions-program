@@ -1,5 +1,5 @@
 use codama::CodamaType;
-use core::mem::{size_of, transmute};
+use core::{fmt, mem::{size_of, transmute}};
 use pinocchio::{
     cpi::Seed,
     error::ProgramError,
@@ -12,7 +12,7 @@ use crate::{
     events::PlanUpdatedEvent,
     instructions::create_plan::{PlanData, MAX_PLAN_PERIOD_HOURS},
     state::{
-        common::{AccountDiscriminator, PlanStatus},
+        common::PlanStatus,
         AuthorityConsentRegistry, PlanRevisionRegistry, VNextPlan,
     },
     AccountCheck, MintInterface, ProgramAccount, ProgramAccountInit, SignerAccount, SubscriptionsError, SystemAccount,
@@ -24,10 +24,27 @@ pub const UPDATE_DISCRIMINATOR: &u8 = &21;
 
 /// Customer-signed Plan creation envelope. The deadline bounds delayed first execution.
 #[repr(C, packed)]
-#[derive(CodamaType, Debug, Clone)]
+#[derive(CodamaType)]
 pub struct VNextCreatePlanData {
     pub not_after_ts: i64,
     pub plan_data: PlanData,
+}
+
+impl Clone for VNextCreatePlanData {
+    fn clone(&self) -> Self {
+        unsafe { core::ptr::read_unaligned(self as *const Self) }
+    }
+}
+
+impl fmt::Debug for VNextCreatePlanData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let not_after_ts = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(self.not_after_ts)) };
+        let plan_data = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(self.plan_data)) };
+        f.debug_struct("VNextCreatePlanData")
+            .field("not_after_ts", &not_after_ts)
+            .field("plan_data", &plan_data)
+            .finish()
+    }
 }
 
 impl VNextCreatePlanData {

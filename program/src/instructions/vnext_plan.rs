@@ -123,8 +123,7 @@ pub fn process_create(accounts: &mut [AccountView], data: &VNextCreatePlanData) 
     if expected_plan != *plan_pda.address() {
         return Err(SubscriptionsError::InvalidPlanPda.into());
     }
-    let (expected_registry, registry_bump) =
-        PlanRevisionRegistry::find_pda(merchant.address(), plan_pda.address());
+    let (expected_registry, registry_bump) = PlanRevisionRegistry::find_pda(merchant.address(), plan_pda.address());
     if expected_registry != *revision_registry.address() {
         return Err(SubscriptionsError::PlanRevisionRegistryInvalidPda.into());
     }
@@ -175,14 +174,7 @@ pub fn process_create(accounts: &mut [AccountView], data: &VNextCreatePlanData) 
 
     {
         let mut bytes = plan_pda.try_borrow_mut()?;
-        VNextPlan::init(
-            &mut bytes,
-            merchant.address(),
-            plan_bump,
-            PlanStatus::Active as u8,
-            revision,
-            &plan_data,
-        )?;
+        VNextPlan::init(&mut bytes, merchant.address(), plan_bump, PlanStatus::Active as u8, revision, &plan_data)?;
         let plan = VNextPlan::load_mut(&mut bytes)?;
         plan.data.terms.created_at = now;
     }
@@ -209,14 +201,7 @@ pub fn process_update(accounts: &mut [AccountView], data: &VNextPlanUpdateData) 
     let (owner, plan_revision, current_status, current_pullers, current_metadata, plan_id) = {
         let bytes = plan_pda.try_borrow()?;
         let plan = VNextPlan::load(&bytes)?;
-        (
-            plan.owner,
-            plan.revision,
-            plan.status,
-            plan.data.pullers,
-            plan.data.metadata_uri,
-            plan.data.plan_id,
-        )
+        (plan.owner, plan.revision, plan.status, plan.data.pullers, plan.data.metadata_uri, plan.data.plan_id)
     };
 
     if owner != *merchant.address() {
@@ -243,7 +228,8 @@ pub fn process_update(accounts: &mut [AccountView], data: &VNextPlanUpdateData) 
         }
     }
 
-    if current_status != data.expected_status || current_pullers != data.expected_pullers
+    if current_status != data.expected_status
+        || current_pullers != data.expected_pullers
         || current_metadata != data.expected_metadata_uri
     {
         return Err(SubscriptionsError::StalePlanApproval.into());
@@ -277,13 +263,7 @@ pub fn process_update(accounts: &mut [AccountView], data: &VNextPlanUpdateData) 
         plan.data.metadata_uri = data.metadata_uri;
     }
 
-    let event = PlanUpdatedEvent::new(
-        *plan_pda.address(),
-        *merchant.address(),
-        data.status,
-        0,
-        data.pullers,
-    );
+    let event = PlanUpdatedEvent::new(*plan_pda.address(), *merchant.address(), data.status, 0, data.pullers);
     let event_data = event.to_bytes();
     event_engine::emit_event(&crate::ID, event_authority, self_program, &event_data)?;
 

@@ -37,11 +37,8 @@ impl VNextPlan {
     }
 
     pub fn verify_pda(owner: &Address, plan_id: u64, bump: u8) -> Result<Address, ProgramError> {
-        Address::create_program_address(
-            &[Self::SEED, owner.as_ref(), &plan_id.to_le_bytes(), &[bump]],
-            &crate::ID,
-        )
-        .map_err(|_| SubscriptionsError::InvalidPlanPda.into())
+        Address::create_program_address(&[Self::SEED, owner.as_ref(), &plan_id.to_le_bytes(), &[bump]], &crate::ID)
+            .map_err(|_| SubscriptionsError::InvalidPlanPda.into())
     }
 
     pub fn init(

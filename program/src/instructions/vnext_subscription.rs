@@ -9,22 +9,20 @@ use pinocchio::{
 use pinocchio_token_2022::instructions::TransferChecked;
 
 use crate::{
+    check_token_account_mint, check_token_account_owner,
     constants::MINT_DECIMALS_OFFSET,
     event_engine::{self, EventSerialize},
     events::{
         SubscriptionCancelledEvent, SubscriptionCreatedEvent, SubscriptionResumedEvent, SubscriptionTransferEvent,
     },
-    helpers::{
-        invoke_transfer_checked_with_hook, mint_transfer_hook_program_id, validate_recurring_transfer,
-    },
+    get_token_account_delegate, get_token_account_owner,
+    helpers::{invoke_transfer_checked_with_hook, mint_transfer_hook_program_id, validate_recurring_transfer},
     state::{
-        common::{PlanStatus},
-        AuthorityConsentRegistry, PlanRevisionRegistry, SubscriptionLifecycleRegistry, VNextPlan,
+        common::PlanStatus, AuthorityConsentRegistry, PlanRevisionRegistry, SubscriptionLifecycleRegistry, VNextPlan,
         VNextSubscription, VNextSubscriptionAuthority, AUTHORITY_REGISTRY_ACTIVE,
     },
-    check_token_account_mint, check_token_account_owner, get_token_account_delegate,
-    get_token_account_owner, AccountCheck, MintInterface, ProgramAccount, ProgramAccountInit, SignerAccount,
-    SubscriptionsError, SystemAccount, TokenAccountInterface, TokenProgramInterface, WritableAccount,
+    AccountCheck, MintInterface, ProgramAccount, ProgramAccountInit, SignerAccount, SubscriptionsError, SystemAccount,
+    TokenAccountInterface, TokenProgramInterface, WritableAccount,
 };
 
 pub const SUBSCRIBE_DISCRIMINATOR: &u8 = &22;
@@ -164,11 +162,7 @@ fn validate_vnext_authority(
     }
 
     let expected_ata = Address::find_program_address(
-        &[
-            subscriber.as_ref(),
-            token_program.address().as_ref(),
-            mint.address().as_ref(),
-        ],
+        &[subscriber.as_ref(), token_program.address().as_ref(), mint.address().as_ref()],
         &pinocchio_associated_token_account::ID,
     )
     .0;
@@ -187,12 +181,7 @@ fn validate_lifecycle_registry(
 ) -> ProgramResult {
     ProgramAccount::check(registry_account)?;
     let bytes = registry_account.try_borrow()?;
-    SubscriptionLifecycleRegistry::load(&bytes)?.validate_identity(
-        registry_account.address(),
-        plan,
-        subscriber,
-        source,
-    )
+    SubscriptionLifecycleRegistry::load(&bytes)?.validate_identity(registry_account.address(), plan, subscriber, source)
 }
 
 fn advance_lifecycle(
@@ -280,22 +269,8 @@ fn transfer_with_vnext_delegate(
 /// Creates a VNext Subscription against a non-ATA source and the exact active
 /// Authority consent lineage. No legacy SubscriptionDelegation is touched.
 pub fn process_subscribe(accounts: &mut [AccountView], data: &VNextSubscribeData) -> ProgramResult {
-    let [
-        subscriber,
-        merchant,
-        plan_account,
-        plan_revision_account,
-        subscription_account,
-        lifecycle_registry_account,
-        consent_account,
-        authority_account,
-        mint,
-        source,
-        system_program,
-        token_program,
-        event_authority,
-        self_program,
-    ] = accounts
+    let [subscriber, merchant, plan_account, plan_revision_account, subscription_account, lifecycle_registry_account, consent_account, authority_account, mint, source, system_program, token_program, event_authority, self_program] =
+        accounts
     else {
         return Err(SubscriptionsError::NotEnoughAccountKeys.into());
     };
@@ -315,8 +290,7 @@ pub fn process_subscribe(accounts: &mut [AccountView], data: &VNextSubscribeData
         return Err(SubscriptionsError::InvalidPlanPda.into());
     }
 
-    let (plan_owner, plan_revision, plan_nonce) =
-        validate_plan_revision(plan_account, plan_revision_account)?;
+    let (plan_owner, plan_revision, plan_nonce) = validate_plan_revision(plan_account, plan_revision_account)?;
     if plan_owner != *merchant.address()
         || plan_revision != data.expected_plan_revision
         || plan_nonce != data.expected_plan_nonce
@@ -451,12 +425,7 @@ pub fn process_subscribe(accounts: &mut [AccountView], data: &VNextSubscribeData
             Seed::from(source.address().as_ref()),
             Seed::from(&bump_bytes),
         ];
-        ProgramAccount::init::<VNextSubscription>(
-            subscriber,
-            subscription_account,
-            &seeds,
-            VNextSubscription::LEN,
-        )?;
+        ProgramAccount::init::<VNextSubscription>(subscriber, subscription_account, &seeds, VNextSubscription::LEN)?;
     }
 
     {
@@ -492,15 +461,8 @@ pub fn process_subscribe(accounts: &mut [AccountView], data: &VNextSubscribeData
 
 /// Regular cancellation allows pulls only through the current on-chain period boundary.
 pub fn process_cancel(accounts: &mut [AccountView], data: &RevisionActionData) -> ProgramResult {
-    let [
-        subscriber,
-        plan_account,
-        plan_revision_account,
-        subscription_account,
-        lifecycle_registry_account,
-        event_authority,
-        self_program,
-    ] = accounts
+    let [subscriber, plan_account, plan_revision_account, subscription_account, lifecycle_registry_account, event_authority, self_program] =
+        accounts
     else {
         return Err(SubscriptionsError::NotEnoughAccountKeys.into());
     };
@@ -522,19 +484,13 @@ pub fn process_cancel(accounts: &mut [AccountView], data: &RevisionActionData) -
             subscriber.address(),
             &source_account,
         )?;
-        (
-            sub.source_token_account,
-            sub.expires_at_ts,
-            sub.current_period_start_ts,
-            sub.terms.period_hours,
-        )
+        (sub.source_token_account, sub.expires_at_ts, sub.current_period_start_ts, sub.terms.period_hours)
     };
     if expires_at != 0 {
         return Err(SubscriptionsError::SubscriptionAlreadyCancelled.into());
     }
-    let period_secs = period_hours
-        .checked_mul(crate::constants::SECS_PER_HOUR)
-        .ok_or(SubscriptionsError::ArithmeticOverflow)?;
+    let period_secs =
+        period_hours.checked_mul(crate::constants::SECS_PER_HOUR).ok_or(SubscriptionsError::ArithmeticOverflow)?;
     let period_secs_i64 = i64::try_from(period_secs).map_err(|_| SubscriptionsError::InvalidPeriodLength)?;
     if period_secs_i64 == 0 || now < current_start {
         return Err(SubscriptionsError::DelegationNotStarted.into());
@@ -568,16 +524,8 @@ pub fn process_cancel(accounts: &mut [AccountView], data: &RevisionActionData) -
 
 /// Immediate cancellation requires the current Plan owner and the subscriber to sign.
 pub fn process_cancel_now(accounts: &mut [AccountView], data: &RevisionActionData) -> ProgramResult {
-    let [
-        subscriber,
-        merchant,
-        plan_account,
-        plan_revision_account,
-        subscription_account,
-        lifecycle_registry_account,
-        event_authority,
-        self_program,
-    ] = accounts
+    let [subscriber, merchant, plan_account, plan_revision_account, subscription_account, lifecycle_registry_account, event_authority, self_program] =
+        accounts
     else {
         return Err(SubscriptionsError::NotEnoughAccountKeys.into());
     };
@@ -634,20 +582,8 @@ pub fn process_cancel_now(accounts: &mut [AccountView], data: &RevisionActionDat
 /// Resume is allowed only before the prior cancellation boundary and only while
 /// the exact source-account consent generation remains active.
 pub fn process_resume(accounts: &mut [AccountView], data: &RevisionActionData) -> ProgramResult {
-    let [
-        subscriber,
-        plan_account,
-        plan_revision_account,
-        subscription_account,
-        lifecycle_registry_account,
-        consent_account,
-        authority_account,
-        mint,
-        source,
-        token_program,
-        event_authority,
-        self_program,
-    ] = accounts
+    let [subscriber, plan_account, plan_revision_account, subscription_account, lifecycle_registry_account, consent_account, authority_account, mint, source, token_program, event_authority, self_program] =
+        accounts
     else {
         return Err(SubscriptionsError::NotEnoughAccountKeys.into());
     };
@@ -721,22 +657,8 @@ pub fn process_resume(accounts: &mut [AccountView], data: &RevisionActionData) -
 /// Every VNext pull revalidates the permanent Plan/Subscription revisions,
 /// consent generation, Authority tuple, source delegate, caller, and destination.
 pub fn process_transfer(accounts: &mut [AccountView], transfer_data: &crate::TransferData) -> ProgramResult {
-    let [
-        subscription_account,
-        plan_account,
-        plan_revision_account,
-        lifecycle_registry_account,
-        consent_account,
-        authority_account,
-        source,
-        destination,
-        caller,
-        mint,
-        token_program,
-        event_authority,
-        self_program,
-        remaining @ ..,
-    ] = accounts
+    let [subscription_account, plan_account, plan_revision_account, lifecycle_registry_account, consent_account, authority_account, source, destination, caller, mint, token_program, event_authority, self_program, remaining @ ..] =
+        accounts
     else {
         return Err(SubscriptionsError::NotEnoughAccountKeys.into());
     };
@@ -818,12 +740,7 @@ pub fn process_transfer(accounts: &mut [AccountView], transfer_data: &crate::Tra
         return Err(SubscriptionsError::SubscriptionCancelled.into());
     }
 
-    validate_lifecycle_registry(
-        lifecycle_registry_account,
-        plan_account.address(),
-        &subscriber,
-        &stored_source,
-    )?;
+    validate_lifecycle_registry(lifecycle_registry_account, plan_account.address(), &subscriber, &stored_source)?;
     {
         let bytes = lifecycle_registry_account.try_borrow()?;
         let registry = SubscriptionLifecycleRegistry::load(&bytes)?;
@@ -832,14 +749,8 @@ pub fn process_transfer(accounts: &mut [AccountView], transfer_data: &crate::Tra
         }
     }
 
-    let generation = validate_vnext_authority(
-        &subscriber,
-        mint,
-        source,
-        token_program,
-        consent_account,
-        authority_account,
-    )?;
+    let generation =
+        validate_vnext_authority(&subscriber, mint, source, token_program, consent_account, authority_account)?;
     if generation != authority_generation {
         return Err(SubscriptionsError::VNextAuthorityIdentityMismatch.into());
     }
@@ -883,11 +794,8 @@ pub fn process_transfer(accounts: &mut [AccountView], transfer_data: &crate::Tra
         remaining,
     )?;
 
-    let period_length_i64 =
-        i64::try_from(period_length).map_err(|_| SubscriptionsError::InvalidPeriodLength)?;
-    let period_end = period_start
-        .checked_add(period_length_i64)
-        .ok_or(SubscriptionsError::ArithmeticOverflow)?;
+    let period_length_i64 = i64::try_from(period_length).map_err(|_| SubscriptionsError::InvalidPeriodLength)?;
+    let period_end = period_start.checked_add(period_length_i64).ok_or(SubscriptionsError::ArithmeticOverflow)?;
     let event = SubscriptionTransferEvent::new(
         *subscription_account.address(),
         *plan_account.address(),

@@ -4,11 +4,7 @@ use codama::CodamaAccount;
 use core::mem::{size_of, transmute};
 use pinocchio::{error::ProgramError, Address};
 
-use crate::{
-    instructions::create_plan::PlanTerms,
-    state::common::AccountDiscriminator,
-    SubscriptionsError,
-};
+use crate::{instructions::create_plan::PlanTerms, state::common::AccountDiscriminator, SubscriptionsError};
 
 /// PDA seeds: [subscriptionVNext, plan, subscriber, source_token_account].
 #[repr(C, packed)]
@@ -45,11 +41,7 @@ impl VNextSubscription {
     pub const VERSION: u8 = 1;
     pub const SEED: &'static [u8] = b"subscriptionVNext";
 
-    pub fn find_pda(
-        plan: &Address,
-        subscriber: &Address,
-        source_token_account: &Address,
-    ) -> (Address, u8) {
+    pub fn find_pda(plan: &Address, subscriber: &Address, source_token_account: &Address) -> (Address, u8) {
         Address::find_program_address(
             &[Self::SEED, plan.as_ref(), subscriber.as_ref(), source_token_account.as_ref()],
             &crate::ID,
@@ -63,13 +55,7 @@ impl VNextSubscription {
         bump: u8,
     ) -> Result<Address, ProgramError> {
         Address::create_program_address(
-            &[
-                Self::SEED,
-                plan.as_ref(),
-                subscriber.as_ref(),
-                source_token_account.as_ref(),
-                &[bump],
-            ],
+            &[Self::SEED, plan.as_ref(), subscriber.as_ref(), source_token_account.as_ref(), &[bump]],
             &crate::ID,
         )
         .map_err(|_| SubscriptionsError::InvalidSubscriptionPda.into())
@@ -146,10 +132,7 @@ impl VNextSubscription {
         subscriber: &Address,
         source_token_account: &Address,
     ) -> Result<(), ProgramError> {
-        if self.plan != *plan
-            || self.subscriber != *subscriber
-            || self.source_token_account != *source_token_account
-        {
+        if self.plan != *plan || self.subscriber != *subscriber || self.source_token_account != *source_token_account {
             return Err(SubscriptionsError::LifecycleRegistryIdentityMismatch.into());
         }
         let expected = Self::verify_pda(plan, subscriber, source_token_account, self.bump)?;

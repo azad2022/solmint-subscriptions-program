@@ -469,7 +469,6 @@ pub enum SubscriptionsInstruction {
     #[codama(optional_account_strategy = omitted)]
     RevokeSubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 19,
 
-
     #[codama(account(name = "merchant", signer, writable, docs = "Merchant creating the independent VNext Plan"))]
     #[codama(account(name = "plan_pda", writable, docs = "VNext Plan PDA"))]
     #[codama(account(name = "plan_revision_registry", writable, docs = "Permanent Plan revision lineage"))]
@@ -485,12 +484,25 @@ pub enum SubscriptionsInstruction {
     #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
     UpdatePlanVNext(#[codama(name = "plan_update_data")] VNextPlanUpdateData) = 21,
 
-    #[codama(account(name = "subscriber", signer, writable, docs = "Customer consenting to the exact source account"))]
+    #[codama(account(
+        name = "subscriber",
+        signer,
+        writable,
+        docs = "Customer consenting to the exact source account"
+    ))]
     #[codama(account(name = "merchant", docs = "Merchant who owns the VNext Plan"))]
     #[codama(account(name = "plan_pda", docs = "VNext Plan PDA"))]
     #[codama(account(name = "plan_revision_registry", docs = "Permanent Plan revision lineage"))]
-    #[codama(account(name = "subscription_pda", writable, docs = "VNext Subscription PDA keyed by exact source token account"))]
-    #[codama(account(name = "lifecycle_registry", writable, docs = "Permanent Subscription lifecycle revision lineage"))]
+    #[codama(account(
+        name = "subscription_pda",
+        writable,
+        docs = "VNext Subscription PDA keyed by exact source token account"
+    ))]
+    #[codama(account(
+        name = "lifecycle_registry",
+        writable,
+        docs = "Permanent Subscription lifecycle revision lineage"
+    ))]
     #[codama(account(name = "consent_registry", docs = "Permanent Authority Consent Registry"))]
     #[codama(account(name = "authority", docs = "Tuple-bound VNext token delegate Authority"))]
     #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
@@ -505,7 +517,11 @@ pub enum SubscriptionsInstruction {
     #[codama(account(name = "plan_pda", docs = "VNext Plan"))]
     #[codama(account(name = "plan_revision_registry", docs = "Permanent Plan revision lineage"))]
     #[codama(account(name = "subscription_pda", writable, docs = "VNext Subscription"))]
-    #[codama(account(name = "lifecycle_registry", writable, docs = "Permanent Subscription lifecycle revision lineage"))]
+    #[codama(account(
+        name = "lifecycle_registry",
+        writable,
+        docs = "Permanent Subscription lifecycle revision lineage"
+    ))]
     #[codama(account(name = "event_authority", docs = "Event authority PDA", default_value = pda("eventAuthority")))]
     #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
     CancelSubscriptionVNext(#[codama(name = "action_data")] RevisionActionData) = 23,

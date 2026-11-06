@@ -1,5 +1,8 @@
 use codama::CodamaType;
-use core::{fmt, mem::{size_of, transmute}};
+use core::{
+    fmt,
+    mem::{size_of, transmute},
+};
 use pinocchio::{
     cpi::Seed,
     error::ProgramError,
@@ -11,10 +14,7 @@ use crate::{
     event_engine::{self, EventSerialize},
     events::PlanUpdatedEvent,
     instructions::create_plan::{PlanData, MAX_PLAN_PERIOD_HOURS},
-    state::{
-        common::PlanStatus,
-        AuthorityConsentRegistry, PlanRevisionRegistry, VNextPlan,
-    },
+    state::{common::PlanStatus, AuthorityConsentRegistry, PlanRevisionRegistry, VNextPlan},
     AccountCheck, MintInterface, ProgramAccount, ProgramAccountInit, SignerAccount, SubscriptionsError, SystemAccount,
     TokenProgramInterface, WritableAccount,
 };

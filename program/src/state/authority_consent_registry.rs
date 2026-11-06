@@ -337,10 +337,19 @@ mod tests {
     #[test]
     fn authorize_increments_generation_and_its_own_nonce() {
         let mut registry = initialized();
-        { let actual = registry.authority_generation; assert_eq!(actual, 0); }
+        {
+            let actual = registry.authority_generation;
+            assert_eq!(actual, 0);
+        }
         assert_eq!(registry.authorize(0, 0, 1_000, 1_900).unwrap(), 1);
-        { let actual = registry.authority_generation; assert_eq!(actual, 1); }
-        { let actual = registry.authorize_nonce; assert_eq!(actual, 1); }
+        {
+            let actual = registry.authority_generation;
+            assert_eq!(actual, 1);
+        }
+        {
+            let actual = registry.authorize_nonce;
+            assert_eq!(actual, 1);
+        }
         assert_eq!(registry.status, AUTHORITY_REGISTRY_ACTIVE);
     }
 
@@ -350,8 +359,14 @@ mod tests {
         registry.authorize(0, 0, 1_000, 1_900).unwrap();
         let result = registry.authorize(0, 0, 1_000, 1_900);
         assert_eq!(result.unwrap_err(), ProgramError::Custom(SubscriptionsError::AuthorityAlreadyActive as u32));
-        { let actual = registry.authority_generation; assert_eq!(actual, 1); }
-        { let actual = registry.authorize_nonce; assert_eq!(actual, 1); }
+        {
+            let actual = registry.authority_generation;
+            assert_eq!(actual, 1);
+        }
+        {
+            let actual = registry.authorize_nonce;
+            assert_eq!(actual, 1);
+        }
     }
 
     #[test]
@@ -360,8 +375,14 @@ mod tests {
         registry.authorize(0, 0, 1_000, 1_900).unwrap();
         assert_eq!(registry.revoke(1, 0, 1_000, 1_900).unwrap(), 2);
         assert_eq!(registry.status, AUTHORITY_REGISTRY_REVOKED);
-        { let actual = registry.authority_generation; assert_eq!(actual, 2); }
-        { let actual = registry.revoke_nonce; assert_eq!(actual, 1); }
+        {
+            let actual = registry.authority_generation;
+            assert_eq!(actual, 2);
+        }
+        {
+            let actual = registry.revoke_nonce;
+            assert_eq!(actual, 1);
+        }
         assert!(registry.authorize(1, 1, 1_000, 1_900).is_err());
     }
 
@@ -372,7 +393,10 @@ mod tests {
         assert_eq!(registry.revoke(1, 0, 1_000, 1_900).unwrap(), 2);
         assert!(registry.authorize(0, 0, 1_000, 1_900).is_err());
         assert_eq!(registry.status, AUTHORITY_REGISTRY_REVOKED);
-        { let actual = registry.authority_generation; assert_eq!(actual, 2); }
+        {
+            let actual = registry.authority_generation;
+            assert_eq!(actual, 2);
+        }
     }
 
     #[test]
@@ -402,7 +426,10 @@ mod tests {
         registry.authorize(2, 1, 1_000, 1_900).unwrap();
         assert!(registry.revoke(1, 1, 1_000, 1_900).is_err());
         assert_eq!(registry.status, AUTHORITY_REGISTRY_ACTIVE);
-        { let actual = registry.authority_generation; assert_eq!(actual, 3); }
+        {
+            let actual = registry.authority_generation;
+            assert_eq!(actual, 3);
+        }
     }
 
     #[test]
@@ -410,35 +437,62 @@ mod tests {
         let mut registry = initialized();
         registry.authority_generation = u64::MAX;
         assert!(registry.authorize(u64::MAX, 0, 1_000, 1_900).is_err());
-        { let actual = registry.authority_generation; assert_eq!(actual, u64::MAX); }
+        {
+            let actual = registry.authority_generation;
+            assert_eq!(actual, u64::MAX);
+        }
         assert_eq!(registry.status, AUTHORITY_REGISTRY_REVOKED);
 
         registry.authority_generation = 0;
         registry.authorize_nonce = u64::MAX;
         assert!(registry.authorize(0, u64::MAX, 1_000, 1_900).is_err());
-        { let actual = registry.authority_generation; assert_eq!(actual, 0); }
+        {
+            let actual = registry.authority_generation;
+            assert_eq!(actual, 0);
+        }
 
         registry.authorize_nonce = 0;
         registry.revoke_nonce = u64::MAX;
         assert!(registry.revoke(1, u64::MAX, 1_000, 1_900).is_err());
-        { let actual = registry.authority_generation; assert_eq!(actual, 0); }
+        {
+            let actual = registry.authority_generation;
+            assert_eq!(actual, 0);
+        }
     }
 
     #[test]
     fn expired_or_overlong_actions_do_not_consume_registry_state() {
         let mut registry = initialized();
         assert!(registry.authorize(0, 0, 1_000, 999).is_err());
-        { let actual = registry.authority_generation; assert_eq!(actual, 0); }
-        { let actual = registry.authorize_nonce; assert_eq!(actual, 0); }
+        {
+            let actual = registry.authority_generation;
+            assert_eq!(actual, 0);
+        }
+        {
+            let actual = registry.authorize_nonce;
+            assert_eq!(actual, 0);
+        }
 
         assert!(registry.authorize(0, 0, 1_000, 87_401).is_err());
-        { let actual = registry.authority_generation; assert_eq!(actual, 0); }
-        { let actual = registry.authorize_nonce; assert_eq!(actual, 0); }
+        {
+            let actual = registry.authority_generation;
+            assert_eq!(actual, 0);
+        }
+        {
+            let actual = registry.authorize_nonce;
+            assert_eq!(actual, 0);
+        }
 
         registry.authorize(0, 0, 1_000, 1_900).unwrap();
         assert!(registry.revoke(1, 0, 1_000, 999).is_err());
-        { let actual = registry.authority_generation; assert_eq!(actual, 1); }
-        { let actual = registry.revoke_nonce; assert_eq!(actual, 0); }
+        {
+            let actual = registry.authority_generation;
+            assert_eq!(actual, 1);
+        }
+        {
+            let actual = registry.revoke_nonce;
+            assert_eq!(actual, 0);
+        }
         assert_eq!(registry.status, AUTHORITY_REGISTRY_ACTIVE);
     }
 

@@ -9,8 +9,8 @@ use crate::{
         constants::{MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID, TOKEN_PROGRAM_ID},
         utils::{build_and_send_transaction, fetch_account, init_ata, init_aux_token_account, init_mint, setup},
     },
-    AuthorityConsentRegistry, SubscriptionsError, VNextSubscriptionAuthority,
-    AUTHORITY_REGISTRY_ACTIVE, AUTHORITY_REGISTRY_REVOKED,
+    AuthorityConsentRegistry, SubscriptionsError, VNextSubscriptionAuthority, AUTHORITY_REGISTRY_ACTIVE,
+    AUTHORITY_REGISTRY_REVOKED,
 };
 
 fn to_address(key: &Pubkey) -> pinocchio::Address {
@@ -32,7 +32,12 @@ fn derive_vnext_accounts(subscriber: &Pubkey, mint: &Pubkey, source: &Pubkey) ->
     (to_pubkey(registry), to_pubkey(authority))
 }
 
-fn authority_action_data(discriminator: u8, expected_generation: u64, expected_nonce: u64, not_after_ts: i64) -> Vec<u8> {
+fn authority_action_data(
+    discriminator: u8,
+    expected_generation: u64,
+    expected_nonce: u64,
+    not_after_ts: i64,
+) -> Vec<u8> {
     [
         vec![discriminator],
         expected_generation.to_le_bytes().to_vec(),
@@ -100,16 +105,7 @@ fn vnext_authorize_and_revoke_preserve_persistent_generation() {
     let (registry, authority) = derive_vnext_accounts(&subscriber.pubkey(), &mint, &source);
     let deadline = crate::tests::utils::current_ts() + 3_600;
 
-    let authorize = authorize_ix(
-        &subscriber.pubkey(),
-        registry,
-        authority,
-        mint,
-        source,
-        0,
-        0,
-        deadline,
-    );
+    let authorize = authorize_ix(&subscriber.pubkey(), registry, authority, mint, source, 0, 0, deadline);
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize).assert_ok();
 
     let registry_account = litesvm.get_account(&registry).unwrap();

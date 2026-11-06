@@ -116,11 +116,8 @@ impl SubscriptionLifecycleRegistry {
 
     /// Verifies a supplied PDA and bump.
     pub fn verify_pda(plan: &Address, subscriber: &Address, bump: u8) -> Result<Address, ProgramError> {
-        Address::create_program_address(
-            &[Self::SEED, plan.as_ref(), subscriber.as_ref(), &[bump]],
-            &crate::ID,
-        )
-        .map_err(|_| SubscriptionsError::SubscriptionLifecycleRegistryInvalidPda.into())
+        Address::create_program_address(&[Self::SEED, plan.as_ref(), subscriber.as_ref(), &[bump]], &crate::ID)
+            .map_err(|_| SubscriptionsError::SubscriptionLifecycleRegistryInvalidPda.into())
     }
 
     /// Confirms that the stored Plan/subscriber identity matches all supplied accounts.

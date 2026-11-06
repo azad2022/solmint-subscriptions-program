@@ -1,10 +1,11 @@
 use pinocchio::{account::AccountView, entrypoint, Address, ProgramResult};
 
 use crate::instructions::{
-    authorize_subscription_authority_vnext, cancel_subscription, cancel_subscription_now, close_subscription_authority, create_fixed_delegation, create_plan,
-    create_recurring_delegation, delete_plan, emit_event, initialize_subscription_authority, resume_subscription,
-    revoke_abandoned_delegation, revoke_abandoned_subscription, revoke_delegation, revoke_subscription_authority,
-    revoke_subscription_authority_vnext, subscribe, transfer_fixed_delegation, transfer_recurring_delegation, transfer_subscription, update_plan,
+    authorize_subscription_authority_vnext, cancel_subscription, cancel_subscription_now, close_subscription_authority,
+    create_fixed_delegation, create_plan, create_recurring_delegation, delete_plan, emit_event,
+    initialize_subscription_authority, resume_subscription, revoke_abandoned_delegation, revoke_abandoned_subscription,
+    revoke_delegation, revoke_subscription_authority, revoke_subscription_authority_vnext, subscribe,
+    transfer_fixed_delegation, transfer_recurring_delegation, transfer_subscription, update_plan,
     SubscriptionsInstruction,
 };
 

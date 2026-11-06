@@ -454,6 +454,18 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     );
     litesvm.send_transaction(resume_signed).assert_ok();
 
+    // Sign a pull while the resumed lifecycle is current, then retain it
+    // across CancelNow and re-subscription.
+    let stale_transfer = transfer_ix(
+        &subscriber.pubkey(), &merchant.pubkey(), plan, plan_revision_registry, subscription,
+        lifecycle_registry, consent_registry, authority, source, destination, mint, 3, 3, 200_000,
+    );
+    let stale_transfer_signed = Transaction::new(
+        &[&merchant],
+        Message::new(std::slice::from_ref(&stale_transfer), Some(&merchant.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+
     // CancelNow invalidates all previously signed pull/subscribe payloads.
     let cancel_now = cancel_now_ix(
         &subscriber.pubkey(), &merchant.pubkey(), plan, plan_revision_registry, subscription, lifecycle_registry, 3, 3,
@@ -464,6 +476,12 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         litesvm.latest_blockhash(),
     );
     litesvm.send_transaction(cancel_now_signed).assert_ok();
+
+    // Submit the old customer signature after invalidation but before the
+    // fresh Subscribe. It must fail on the persistent revision, not time.
+    litesvm
+        .send_transaction(stale_subscribe_signed)
+        .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
 
     let resubscribe = subscribe_ix(
         &subscriber.pubkey(), &merchant.pubkey(), plan, plan_revision_registry, subscription,
@@ -476,21 +494,8 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     );
     litesvm.send_transaction(resubscribe_signed).assert_ok();
 
-    litesvm
-        .send_transaction(stale_subscribe_signed)
-        .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
-
-    // The transfer snapshot is also stale even though the same PDA and source
-    // account have been reused by the new Subscription incarnation.
-    let stale_transfer = transfer_ix(
-        &subscriber.pubkey(), &merchant.pubkey(), plan, plan_revision_registry, subscription,
-        lifecycle_registry, consent_registry, authority, source, destination, mint, 1, 1, 200_000,
-    );
-    let stale_transfer_signed = Transaction::new(
-        &[&merchant],
-        Message::new(std::slice::from_ref(&stale_transfer), Some(&merchant.pubkey())),
-        litesvm.latest_blockhash(),
-    );
+    // The transfer signature was retained from revision 3. It must remain
+    // stale after the same Subscription PDA is reused at revision 5.
     litesvm
         .send_transaction(stale_transfer_signed)
         .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);

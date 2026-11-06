@@ -141,12 +141,7 @@ fn vnext_authorize_and_revoke_preserve_persistent_generation() {
         0,
         crate::tests::utils::current_ts() + 3_600,
     );
-    let revoke_signed = Transaction::new(
-        &[&*subscriber],
-        Message::new(std::slice::from_ref(&revoke), Some(&subscriber.pubkey())),
-        litesvm.latest_blockhash(),
-    );
-    litesvm.send_transaction(revoke_signed).assert_ok();
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &revoke).assert_ok();
 
     let registry_account = litesvm.get_account(&registry).unwrap();
     let registry_state = AuthorityConsentRegistry::load(&registry_account.data).unwrap();
@@ -198,7 +193,12 @@ fn vnext_revoke_tombstone_preempts_unsubmitted_authorization() {
         0,
         crate::tests::utils::current_ts() + 3_600,
     );
-    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &revoke).assert_ok();
+    let revoke_signed = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&revoke), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(revoke_signed).assert_ok();
 
     let registry_account = litesvm.get_account(&registry).unwrap();
     let registry_state = AuthorityConsentRegistry::load(&registry_account.data).unwrap();

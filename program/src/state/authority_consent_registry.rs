@@ -156,12 +156,11 @@ impl AuthorityConsentRegistry {
     }
 
     /// Finds the canonical Registry PDA and bump for the complete consent tuple.
-    pub fn find_pda(
-        subscriber: &Address,
-        mint: &Address,
-        source_token_account: &Address,
-    ) -> (Address, u8) {
-        Address::find_program_address(&[Self::SEED, subscriber.as_ref(), mint.as_ref(), source_token_account.as_ref()], &crate::ID)
+    pub fn find_pda(subscriber: &Address, mint: &Address, source_token_account: &Address) -> (Address, u8) {
+        Address::find_program_address(
+            &[Self::SEED, subscriber.as_ref(), mint.as_ref(), source_token_account.as_ref()],
+            &crate::ID,
+        )
     }
 
     /// Verifies a supplied PDA and bump against the complete consent tuple.
@@ -171,7 +170,10 @@ impl AuthorityConsentRegistry {
         source_token_account: &Address,
         bump: u8,
     ) -> Result<Address, ProgramError> {
-        Address::create_program_address(&[Self::SEED, subscriber.as_ref(), mint.as_ref(), source_token_account.as_ref(), &[bump]], &crate::ID)
+        Address::create_program_address(
+            &[Self::SEED, subscriber.as_ref(), mint.as_ref(), source_token_account.as_ref(), &[bump]],
+            &crate::ID,
+        )
         .map_err(|_| SubscriptionsError::AuthorityConsentRegistryInvalidPda.into())
     }
 

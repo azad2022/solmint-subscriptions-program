@@ -15,6 +15,7 @@ pub mod subscription_authority;
 pub mod subscription_delegation;
 pub mod subscription_lifecycle_registry;
 pub mod versioning;
+pub mod vnext_subscription_authority;
 
 pub use authority_consent_registry::{
     AuthorityConsentRegistry, AUTHORITY_REGISTRY_ACTIVE, AUTHORITY_REGISTRY_REVOKED, MAX_AUTHORITY_ACTION_LIFETIME_SECS,
@@ -33,3 +34,4 @@ pub use subscription_authority::SubscriptionAuthority;
 pub use subscription_delegation::SubscriptionDelegation;
 pub use subscription_lifecycle_registry::SubscriptionLifecycleRegistry;
 pub use versioning::{check_and_update_version, check_min_account_size, CURRENT_VERSION};
+pub use vnext_subscription_authority::VNextSubscriptionAuthority;

@@ -48,11 +48,8 @@ pub fn process(accounts: &mut [AccountView], data: &crate::AuthorityActionData) 
     }
     let authority_payer = resolve_optional_payer(subscriber, rem)?;
 
-    let (registry_address, registry_bump) = AuthorityConsentRegistry::find_pda(
-        subscriber.address(),
-        token_mint.address(),
-        source_token_account.address(),
-    );
+    let (registry_address, registry_bump) =
+        AuthorityConsentRegistry::find_pda(subscriber.address(), token_mint.address(), source_token_account.address());
     if registry_address != *registry.address() {
         return Err(SubscriptionsError::AuthorityConsentRegistryInvalidPda.into());
     }
@@ -70,11 +67,7 @@ pub fn process(accounts: &mut [AccountView], data: &crate::AuthorityActionData) 
     // v0.5.0 program derives and accepts only the canonical ATA; this is the
     // first half of the legacy-program isolation boundary.
     let expected_ata = pinocchio::Address::find_program_address(
-        &[
-            subscriber.address().as_ref(),
-            token_program.address().as_ref(),
-            token_mint.address().as_ref(),
-        ],
+        &[subscriber.address().as_ref(), token_program.address().as_ref(), token_mint.address().as_ref()],
         &pinocchio_associated_token_account::ID,
     )
     .0;

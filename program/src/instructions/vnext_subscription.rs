@@ -174,7 +174,7 @@ fn validate_vnext_authority(
 }
 
 fn validate_lifecycle_registry(
-    registry_account: &mut AccountView,
+    registry_account: &AccountView,
     plan: &Address,
     subscriber: &Address,
     source: &Address,
@@ -185,7 +185,7 @@ fn validate_lifecycle_registry(
 }
 
 fn advance_lifecycle(
-    registry_account: &AccountView,
+    registry_account: &mut AccountView,
     plan: &Address,
     subscriber: &Address,
     source: &Address,

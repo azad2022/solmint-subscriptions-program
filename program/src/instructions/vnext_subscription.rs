@@ -900,6 +900,20 @@ mod transfer_freshness_tests {
     }
 
     #[test]
+    fn vnext_transfer_payload_layout_is_frozen() {
+        assert_eq!(VNextTransferData::LEN, 120);
+        assert_eq!(core::mem::offset_of!(VNextTransferData, amount), 0);
+        assert_eq!(core::mem::offset_of!(VNextTransferData, delegator), 8);
+        assert_eq!(core::mem::offset_of!(VNextTransferData, mint), 40);
+        assert_eq!(core::mem::offset_of!(VNextTransferData, expected_plan_revision), 72);
+        assert_eq!(core::mem::offset_of!(VNextTransferData, expected_plan_nonce), 80);
+        assert_eq!(core::mem::offset_of!(VNextTransferData, expected_lifecycle_revision), 88);
+        assert_eq!(core::mem::offset_of!(VNextTransferData, expected_lifecycle_nonce), 96);
+        assert_eq!(core::mem::offset_of!(VNextTransferData, expected_authority_generation), 104);
+        assert_eq!(core::mem::offset_of!(VNextTransferData, not_after_ts), 112);
+    }
+
+    #[test]
     fn transfer_accepts_exact_live_snapshot() {
         assert!(validate_transfer_freshness(&payload(), 100, 4, 7, 9, 12, 3).is_ok());
     }

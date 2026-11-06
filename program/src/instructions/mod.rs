@@ -48,7 +48,7 @@ use crate::instructions::update_plan::UpdatePlanData;
 use crate::SubscriptionsError;
 pub use authority_consent::AuthorityActionData;
 pub use vnext_plan::{VNextCreatePlanData, VNextPlanUpdateData};
-pub use vnext_subscription::{RevisionActionData, VNextSubscribeData};
+pub use vnext_subscription::{RevisionActionData, VNextSubscribeData, VNextTransferData};
 
 /// All instructions supported by the subscriptions program.
 ///

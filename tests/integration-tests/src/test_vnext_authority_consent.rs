@@ -145,7 +145,7 @@ fn vnext_authorize_and_revoke_preserve_persistent_generation() {
         crate::tests::utils::current_ts() + 3_600,
     );
     let stale_signed = Transaction::new(
-        &[subscriber],
+        &[&*subscriber],
         Message::new(std::slice::from_ref(&stale_authorize), Some(&subscriber.pubkey())),
         litesvm.latest_blockhash(),
     );
@@ -161,7 +161,7 @@ fn vnext_authorize_and_revoke_preserve_persistent_generation() {
         crate::tests::utils::current_ts() + 3_600,
     );
     let revoke_signed = Transaction::new(
-        &[subscriber],
+        &[&*subscriber],
         Message::new(std::slice::from_ref(&revoke), Some(&subscriber.pubkey())),
         litesvm.latest_blockhash(),
     );

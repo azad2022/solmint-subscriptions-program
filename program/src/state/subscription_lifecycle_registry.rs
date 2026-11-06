@@ -137,10 +137,7 @@ impl SubscriptionLifecycleRegistry {
         subscriber: &Address,
         source_token_account: &Address,
     ) -> Result<(), ProgramError> {
-        if self.plan != *plan
-            || self.subscriber != *subscriber
-            || self.source_token_account != *source_token_account
-        {
+        if self.plan != *plan || self.subscriber != *subscriber || self.source_token_account != *source_token_account {
             return Err(SubscriptionsError::LifecycleRegistryIdentityMismatch.into());
         }
         let expected = Self::verify_pda(plan, subscriber, source_token_account, self.bump)?;

@@ -51,6 +51,6 @@ mod test_update_plan;
 #[cfg(test)]
 mod test_vnext_authority_consent;
 #[cfg(test)]
-mod test_vnext_subscription;
-#[cfg(test)]
 mod test_vnext_legacy_isolation;
+#[cfg(test)]
+mod test_vnext_subscription;

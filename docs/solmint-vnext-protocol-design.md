@@ -3,7 +3,7 @@
 **Status:** DRAFT — PARTIAL RUNTIME IMPLEMENTATION; ABI NOT FROZEN; NO DEPLOYMENT  
 **Work branch:** feat/solmint-g1-authority-vnext  
 **Baseline branch:** solmint/v0.5.0-baseline  
-**Reviewed source HEAD:** c7882a51862f07eec781ba5aa3b82eee4eb24212  
+**Reviewed source HEAD:** aa6f7c0839970f9e758876b30a27950629307996  
 **Immutable upstream source baseline:** solana-foundation/subscriptions@364a41976c33347d092902443bbec2def9227e75  
 **Purpose:** G1-2 protocol and ABI design checkpoint
 
@@ -142,7 +142,7 @@ The rent payer is recorded. The Registry is not closeable because that would res
 - The two action counters are independent so an invalidate signed against an absent Registry is not made stale solely because one pending authorize transaction lands first.
 - Generation and nonce arithmetic is checked; overflow fails without changing state.
 
-The transition implementation is in `program/src/state/authority_consent_registry.rs`; authorize/revoke handlers are wired to dispatch and perform source-account/token-program validation, persistent Registry allocation, tuple-bound Authority creation, delegate approval/revoke and Authority close. The account layout is implemented, but ABI freeze remains pending complete golden tests, generated IDL synchronization and independent review. The current exact-source CI run must pass before this runtime slice is considered validated.
+The transition implementation is in `program/src/state/authority_consent_registry.rs`; authorize/revoke handlers are wired to dispatch and perform source-account/token-program validation, persistent Registry allocation, tuple-bound Authority creation, delegate approval/revoke and Authority close. The account layout and Authority runtime slice are implemented. Exact-source CI run 42271881452 at source aa6f7c0 passed Rust formatting, Program unit tests, deterministic SBF build, full LiteSVM integration and immutable legacy non-ATA isolation. ABI freeze remains pending golden byte/account-meta tests and independent review.
 
 ### 3.2 Required identity checks
 
@@ -204,7 +204,7 @@ All generation and action-counter arithmetic must fail closed on overflow. Wrapa
 
 The current VNext Subscribe path binds new Subscription creation to the current Authority generation and Plan revision. VNext fixed and recurring delegation creation paths do not exist yet. The inherited legacy fixed/recurring paths remain unchanged and are not a VNext compatibility bridge. Before any product use, all permission-creating paths must be explicitly covered, including:
 
-- VNext Subscription creation (implemented; exact-source tests pending);
+- VNext Subscription creation (implemented; exact-source Unit/SBF/LiteSVM tests PASS in run 42271881452);
 - VNext fixed delegation creation (NOT IMPLEMENTED);
 - VNext recurring delegation creation (NOT IMPLEMENTED);
 - any future instruction that can create or restore spend authority.
@@ -263,7 +263,7 @@ Both instructions use a 24-byte packed payload following a one-byte instruction 
 - `RevokeSubscriptionAuthorityVNext`: discriminator **19**. Accounts in order: subscriber signer/writable, Registry writable, VNext Authority writable (may be absent), mint readonly, source account writable (may be absent for a closed-account tombstone), System Program readonly, token program readonly, optional rent receiver writable.
 - The Registry is always funded by the subscriber and is never rent-sponsored. The closeable VNext Authority may be funded by a separate payer; revoke requires the exact recorded payer as rent receiver when that payer differs from subscriber.
 
-These assignments are implemented but not yet frozen; generated IDL synchronization, exact byte/account-meta golden tests and independent review remain required.
+These assignments are implemented and generated IDL is structurally synchronized (PASS in run 42271881452); exact byte/account-meta golden tests and independent review remain required, so ABI is not frozen.
 
 Durable Nonce transactions and supported program-controlled-wallet/multisig proposals remain in product scope. They may be enabled only when the Program rejects the operation after its on-chain deadline or after the expected generation/revision/action nonce has advanced. Recent blockhash expiry alone is insufficient. The test matrix must retain a signed proposal, invalidate the underlying state, and then execute the delayed transaction to prove it fails.
 
@@ -377,7 +377,7 @@ The current additive VNext instruction assignments are:
 | ResumeSubscriptionVNext | 25 | RevisionActionData, 24 bytes |
 | TransferSubscriptionVNext | 26 | VNextTransferData, 120 bytes |
 
-The existing instruction discriminators 0–17 remain unchanged. The current Rust enum and Codama annotations define account order and signer/writable flags. TransferHook remaining accounts are forwarded through the existing Token-2022 helper. These assignments are implemented and the Codama IDL has been regenerated and committed at source checkpoint c7882a5. The exact-source CI equality check is pending; golden byte/account-meta tests and independent review remain required.
+The existing instruction discriminators 0–17 remain unchanged. The current Rust enum and Codama annotations define account order and signer/writable flags. TransferHook remaining accounts are forwarded through the existing Token-2022 helper. These assignments are implemented and the Codama IDL has been regenerated and committed at source checkpoint aa6f7c0. Structural equality against the exact-source Codama output passed in run 42271881452 (27 instructions, 12 accounts, 19 defined types, 12 PDAs); golden byte/account-meta tests and independent review remain required.
 
 `VNextTransferData` v1 is exactly 120 bytes, little-endian/packed:
 
@@ -407,13 +407,13 @@ No feature is permanently de-scoped as a shortcut for security. Each capability 
 
 The intended retained surface remains:
 
-- VNext Authority consent, invalidation and explicit reauthorization (runtime implemented; exact-source tests pending);
+- VNext Authority consent, invalidation and explicit reauthorization (runtime implemented; exact-source Unit/LiteSVM tests PASS in run 42271881452);
 - independent source-account-bound permissions;
 - VNext Plan create/update and persistent Plan revision (runtime implemented; no VNext delete/recovery path yet);
-- VNext Subscribe, regular cancellation, immediate dual-authorized cancellation, Resume, transfer and re-subscription (runtime implemented; integration tests added; CI pending);
+- VNext Subscribe, regular cancellation, immediate dual-authorized cancellation, Resume, transfer and re-subscription (runtime implemented; exact-source integration suite PASS in run 42271881452);
 - Plan Owner plus up to four additional Pullers;
 - SPL Token and Token-2022/TransferHook transfer forwarding (code path present; VNext-specific TransferHook tests pending);
-- events and generated Codama IDL (VNext ABI regenerated and committed; exact-source CI equality check pending);
+- events and generated Codama IDL (structural exact-source equality PASS in run 42271881452);
 - fixed/recurring VNext permissions, finite Plan support, Plan deletion/rent recovery, full rent-sponsorship policy, legacy migration/recovery and smart-wallet/durable-nonce compatibility (NOT IMPLEMENTED / OPEN).
 
 The exact financial/business semantics for partial final periods, rent sponsor quotas/recovery and split/multiple destinations must follow the approved product contract and executable tests. This document does not invent those values or policies.
@@ -485,7 +485,7 @@ Current status at document authoring:
 - G1-0 baseline/branch checkpoint: PASS / COMPLETE according to the latest recorded progress checkpoint.
 - G1-1 independent source intake: IN PROGRESS. The MIT fork and reproducible v0.5.0 baseline are established; fork-native CI visibility remains UNKNOWN.
 - G1-2 protocol/ABI: IN PROGRESS. Authority Consent Registry and VNext Authority v1 account layouts plus authorize/revoke instruction payload/account order are specified. Complete Subscription, Plan, transfer, migration and client ABI is not frozen.
-- G1-3 Program implementation: IN PROGRESS — Authority Registry, tuple-bound Authority, Subscription lifecycle and Plan revision state structs are added; authorize/revoke handlers are wired to dispatch; three LiteSVM scenarios are written. Exact-source Rust/LiteSVM execution and Codama IDL regeneration are pending.
+- G1-3 Program implementation: PASS for the implemented VNext Subscription runtime slice — Authority, Plan create/update, Subscription lifecycle, transfer freshness and the exact-source Unit/SBF/LiteSVM test sequence passed. Fixed/recurring delegations, finite Plans, deletion/recovery, migration and complete legacy isolation remain open.
 - G1-4 migration: NOT STARTED.
 - G1-5 adversarial proof: NOT STARTED.
 - G1-6 independent audit: NOT STARTED.

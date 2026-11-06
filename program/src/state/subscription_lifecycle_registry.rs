@@ -215,8 +215,8 @@ mod tests {
         let mut registry = initialized();
         assert_eq!(registry.advance(0, 0).unwrap(), 1);
         assert_eq!(registry.advance(1, 1).unwrap(), 2);
-        assert_eq!(registry.revision, 2);
-        assert_eq!(registry.action_nonce, 2);
+        { let actual = registry.revision; assert_eq!(actual, 2); }
+        { let actual = registry.action_nonce; assert_eq!(actual, 2); }
     }
 
     #[test]
@@ -226,7 +226,7 @@ mod tests {
         registry.advance(1, 1).unwrap(); // terminal close
         registry.advance(2, 2).unwrap(); // a new Subscribe at the same logical PDA
         assert!(registry.advance(1, 1).is_err()); // old CancelNow/Resume approval
-        assert_eq!(registry.revision, 3);
+        { let actual = registry.revision; assert_eq!(actual, 3); }
     }
 
     #[test]
@@ -234,11 +234,11 @@ mod tests {
         let mut registry = initialized();
         registry.revision = u64::MAX;
         assert!(registry.advance(u64::MAX, 0).is_err());
-        assert_eq!(registry.action_nonce, 0);
+        { let actual = registry.action_nonce; assert_eq!(actual, 0); }
 
         registry.revision = 0;
         registry.action_nonce = u64::MAX;
         assert!(registry.advance(0, u64::MAX).is_err());
-        assert_eq!(registry.revision, 0);
+        { let actual = registry.revision; assert_eq!(actual, 0); }
     }
 }

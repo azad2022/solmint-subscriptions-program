@@ -82,6 +82,61 @@ impl VNextSubscribeData {
     }
 }
 
+/// Transfer authorization snapshot. A signed pull is valid only for the exact
+/// Plan revision, Subscription lifecycle revision, Authority generation and
+/// bounded on-chain deadline observed by the signer.
+#[repr(C, packed)]
+#[derive(CodamaType, Debug, Clone)]
+pub struct VNextTransferData {
+    pub amount: u64,
+    pub delegator: Address,
+    pub mint: Address,
+    pub expected_plan_revision: u64,
+    pub expected_plan_nonce: u64,
+    pub expected_lifecycle_revision: u64,
+    pub expected_lifecycle_nonce: u64,
+    pub expected_authority_generation: u64,
+    pub not_after_ts: i64,
+}
+
+impl VNextTransferData {
+    pub const LEN: usize = size_of::<Self>();
+
+    pub fn load(data: &[u8]) -> Result<&Self, ProgramError> {
+        if data.len() != Self::LEN {
+            return Err(SubscriptionsError::InvalidInstructionData.into());
+        }
+        Ok(unsafe { &*transmute::<*const u8, *const Self>(data.as_ptr()) })
+    }
+}
+
+/// Enforces signed-transfer freshness against the live monotonic state.
+fn validate_transfer_freshness(
+    data: &VNextTransferData,
+    now: i64,
+    plan_revision: u64,
+    plan_nonce: u64,
+    lifecycle_revision: u64,
+    lifecycle_nonce: u64,
+    authority_generation: u64,
+) -> ProgramResult {
+    AuthorityConsentRegistry::validate_action_deadline(now, data.not_after_ts)?;
+
+    if plan_revision != data.expected_plan_revision || plan_nonce != data.expected_plan_nonce {
+        return Err(SubscriptionsError::StalePlanRevision.into());
+    }
+    if lifecycle_revision != data.expected_lifecycle_revision {
+        return Err(SubscriptionsError::StaleSubscriptionLifecycleRevision.into());
+    }
+    if lifecycle_nonce != data.expected_lifecycle_nonce {
+        return Err(SubscriptionsError::StaleLifecycleActionNonce.into());
+    }
+    if authority_generation != data.expected_authority_generation {
+        return Err(SubscriptionsError::VNextAuthorityIdentityMismatch.into());
+    }
+    Ok(())
+}
+
 fn validate_plan_revision(
     plan_account: &AccountView,
     revision_account: &AccountView,
@@ -656,7 +711,7 @@ pub fn process_resume(accounts: &mut [AccountView], data: &RevisionActionData) -
 
 /// Every VNext pull revalidates the permanent Plan/Subscription revisions,
 /// consent generation, Authority tuple, source delegate, caller, and destination.
-pub fn process_transfer(accounts: &mut [AccountView], transfer_data: &crate::TransferData) -> ProgramResult {
+pub fn process_transfer(accounts: &mut [AccountView], transfer_data: &VNextTransferData) -> ProgramResult {
     let [subscription_account, plan_account, plan_revision_account, lifecycle_registry_account, consent_account, authority_account, source, destination, caller, mint, token_program, event_authority, self_program, remaining @ ..] =
         accounts
     else {
@@ -674,7 +729,8 @@ pub fn process_transfer(accounts: &mut [AccountView], transfer_data: &crate::Tra
     TokenAccountInterface::check_accounts_with_program(token_program, &[source, destination])?;
 
     let now = Clock::get()?.unix_timestamp;
-    let (_, _, _) = validate_plan_revision(plan_account, plan_revision_account)?;
+    AuthorityConsentRegistry::validate_action_deadline(now, transfer_data.not_after_ts)?;
+    let (_, plan_revision, plan_nonce) = validate_plan_revision(plan_account, plan_revision_account)?;
     let (
         stored_plan,
         subscriber,
@@ -741,12 +797,13 @@ pub fn process_transfer(accounts: &mut [AccountView], transfer_data: &crate::Tra
     }
 
     validate_lifecycle_registry(lifecycle_registry_account, plan_account.address(), &subscriber, &stored_source)?;
-    {
+    let (live_lifecycle_revision, live_lifecycle_nonce) = {
         let bytes = lifecycle_registry_account.try_borrow()?;
         let registry = SubscriptionLifecycleRegistry::load(&bytes)?;
-        if registry.revision != lifecycle_revision {
-            return Err(SubscriptionsError::StaleSubscriptionLifecycleRevision.into());
-        }
+        (registry.revision, registry.action_nonce)
+    };
+    if live_lifecycle_revision != lifecycle_revision {
+        return Err(SubscriptionsError::StaleSubscriptionLifecycleRevision.into());
     }
 
     let generation =
@@ -754,6 +811,15 @@ pub fn process_transfer(accounts: &mut [AccountView], transfer_data: &crate::Tra
     if generation != authority_generation {
         return Err(SubscriptionsError::VNextAuthorityIdentityMismatch.into());
     }
+    validate_transfer_freshness(
+        transfer_data,
+        now,
+        plan_revision,
+        plan_nonce,
+        live_lifecycle_revision,
+        live_lifecycle_nonce,
+        generation,
+    )?;
 
     let receiver_owner = {
         let bytes = destination.try_borrow()?;
@@ -813,4 +879,67 @@ pub fn process_transfer(accounts: &mut [AccountView], transfer_data: &crate::Tra
     event_engine::emit_event(&crate::ID, event_authority, self_program, &event_data)?;
     let _ = plan_status;
     Ok(())
+}
+
+#[cfg(test)]
+mod transfer_freshness_tests {
+    use super::*;
+
+    fn payload() -> VNextTransferData {
+        VNextTransferData {
+            amount: 1,
+            delegator: Address::from([1; 32]),
+            mint: Address::from([2; 32]),
+            expected_plan_revision: 4,
+            expected_plan_nonce: 7,
+            expected_lifecycle_revision: 9,
+            expected_lifecycle_nonce: 12,
+            expected_authority_generation: 3,
+            not_after_ts: 200,
+        }
+    }
+
+    #[test]
+    fn transfer_accepts_exact_live_snapshot() {
+        assert!(validate_transfer_freshness(&payload(), 100, 4, 7, 9, 12, 3).is_ok());
+    }
+
+    #[test]
+    fn transfer_rejects_stale_plan_revision_or_nonce() {
+        let data = payload();
+        assert_eq!(
+            validate_transfer_freshness(&data, 100, 5, 7, 9, 12, 3).unwrap_err(),
+            ProgramError::Custom(SubscriptionsError::StalePlanRevision as u32)
+        );
+        assert_eq!(
+            validate_transfer_freshness(&data, 100, 4, 8, 9, 12, 3).unwrap_err(),
+            ProgramError::Custom(SubscriptionsError::StalePlanRevision as u32)
+        );
+    }
+
+    #[test]
+    fn transfer_rejects_stale_lifecycle_revision_or_nonce() {
+        let data = payload();
+        assert_eq!(
+            validate_transfer_freshness(&data, 100, 4, 7, 10, 12, 3).unwrap_err(),
+            ProgramError::Custom(SubscriptionsError::StaleSubscriptionLifecycleRevision as u32)
+        );
+        assert_eq!(
+            validate_transfer_freshness(&data, 100, 4, 7, 9, 13, 3).unwrap_err(),
+            ProgramError::Custom(SubscriptionsError::StaleLifecycleActionNonce as u32)
+        );
+    }
+
+    #[test]
+    fn transfer_rejects_old_authority_generation_and_expired_deadline() {
+        let data = payload();
+        assert_eq!(
+            validate_transfer_freshness(&data, 100, 4, 7, 9, 12, 4).unwrap_err(),
+            ProgramError::Custom(SubscriptionsError::VNextAuthorityIdentityMismatch as u32)
+        );
+        assert_eq!(
+            validate_transfer_freshness(&data, 201, 4, 7, 9, 12, 3).unwrap_err(),
+            ProgramError::Custom(SubscriptionsError::AuthorityActionExpired as u32)
+        );
+    }
 }

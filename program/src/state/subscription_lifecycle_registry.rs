@@ -192,7 +192,7 @@ mod tests {
     }
 
     #[test]
-    fn v1_layout_is_frozen_at_116_bytes() {
+    fn v1_layout_is_frozen_at_148_bytes() {
         assert_eq!(SubscriptionLifecycleRegistry::LEN, SubscriptionLifecycleRegistry::V1_LEN);
         assert_eq!(core::mem::offset_of!(SubscriptionLifecycleRegistry, source_token_account), 68);
         assert_eq!(core::mem::offset_of!(SubscriptionLifecycleRegistry, revision), 132);

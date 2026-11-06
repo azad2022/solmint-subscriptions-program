@@ -1,7 +1,7 @@
 use pinocchio::{account::AccountView, entrypoint, Address, ProgramResult};
 
 use crate::instructions::{
-    authorize_subscription_authority_vnext, cancel_subscription, cancel_subscription_now, close_subscription_authority,
+    authorize_subscription_authority_vnext, vnext_plan, vnext_subscription, cancel_subscription, cancel_subscription_now, close_subscription_authority,
     create_fixed_delegation, create_plan, create_recurring_delegation, delete_plan, emit_event,
     initialize_subscription_authority, resume_subscription, revoke_abandoned_delegation, revoke_abandoned_subscription,
     revoke_delegation, revoke_subscription_authority, revoke_subscription_authority_vnext, subscribe,
@@ -26,6 +26,13 @@ pub fn process_instruction(
         SubscriptionsInstruction::RevokeSubscriptionAuthorityVNext(data) => {
             revoke_subscription_authority_vnext::process(accounts, &data)
         }
+        SubscriptionsInstruction::CreatePlanVNext(data) => vnext_plan::process_create(accounts, &data),
+        SubscriptionsInstruction::UpdatePlanVNext(data) => vnext_plan::process_update(accounts, &data),
+        SubscriptionsInstruction::SubscribeVNext(data) => vnext_subscription::process_subscribe(accounts, &data),
+        SubscriptionsInstruction::CancelSubscriptionVNext(data) => vnext_subscription::process_cancel(accounts, &data),
+        SubscriptionsInstruction::CancelSubscriptionNowVNext(data) => vnext_subscription::process_cancel_now(accounts, &data),
+        SubscriptionsInstruction::ResumeSubscriptionVNext(data) => vnext_subscription::process_resume(accounts, &data),
+        SubscriptionsInstruction::TransferSubscriptionVNext(data) => vnext_subscription::process_transfer(accounts, &data),
         SubscriptionsInstruction::CreateFixedDelegation(data) => create_fixed_delegation::process(accounts, &data),
         SubscriptionsInstruction::CreateRecurringDelegation(data) => {
             create_recurring_delegation::process(accounts, &data)

@@ -71,6 +71,10 @@ pub enum AccountDiscriminator {
     SubscriptionDelegation = 4,
     /// Persistent generation and nonce state for an Authority consent lineage.
     AuthorityConsentRegistry = 5,
+    /// Persistent lifecycle revision for a logical Plan/subscriber pair.
+    SubscriptionLifecycleRegistry = 6,
+    /// Persistent administration revision for a Plan PDA.
+    PlanRevisionRegistry = 7,
 }
 
 impl TryFrom<u8> for AccountDiscriminator {
@@ -83,6 +87,8 @@ impl TryFrom<u8> for AccountDiscriminator {
             3 => Ok(Self::RecurringDelegation),
             4 => Ok(Self::SubscriptionDelegation),
             5 => Ok(Self::AuthorityConsentRegistry),
+            6 => Ok(Self::SubscriptionLifecycleRegistry),
+            7 => Ok(Self::PlanRevisionRegistry),
             _ => Err(SubscriptionsError::InvalidAccountDiscriminator.into()),
         }
     }
@@ -97,6 +103,8 @@ impl From<AccountDiscriminator> for u8 {
             AccountDiscriminator::RecurringDelegation => 3,
             AccountDiscriminator::SubscriptionDelegation => 4,
             AccountDiscriminator::AuthorityConsentRegistry => 5,
+            AccountDiscriminator::SubscriptionLifecycleRegistry => 6,
+            AccountDiscriminator::PlanRevisionRegistry => 7,
         }
     }
 }

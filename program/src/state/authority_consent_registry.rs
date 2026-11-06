@@ -461,6 +461,25 @@ mod tests {
         assert_eq!(registry.authority_generation, 0);
     }
 
+
+    #[test]
+    fn expired_or_overlong_actions_do_not_consume_registry_state() {
+        let mut registry = initialized();
+        assert!(registry.authorize(0, 0, 1_000, 999).is_err());
+        assert_eq!(registry.authority_generation, 0);
+        assert_eq!(registry.authorize_nonce, 0);
+
+        assert!(registry.authorize(0, 0, 1_000, 87_401).is_err());
+        assert_eq!(registry.authority_generation, 0);
+        assert_eq!(registry.authorize_nonce, 0);
+
+        registry.authorize(0, 0, 1_000, 1_900).unwrap();
+        assert!(registry.revoke(1, 0, 1_000, 999).is_err());
+        assert_eq!(registry.authority_generation, 1);
+        assert_eq!(registry.revoke_nonce, 0);
+        assert_eq!(registry.status, AUTHORITY_REGISTRY_ACTIVE);
+    }
+
     #[test]
     fn action_deadline_accepts_now_and_maximum_boundary() {
         assert!(AuthorityConsentRegistry::validate_action_deadline(1_000, 1_000).is_ok());

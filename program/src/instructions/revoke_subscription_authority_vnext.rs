@@ -13,8 +13,7 @@ use crate::{
     get_token_account_delegate,
     state::{AuthorityConsentRegistry, VNextSubscriptionAuthority},
     AccountCheck, AccountClose, MintInterface, ProgramAccount, ProgramAccountInit, SignerAccount, SubscriptionsError,
-    SystemAccount,
-    TokenAccountInterface, TokenProgramInterface, WritableAccount,
+    SystemAccount, TokenAccountInterface, TokenProgramInterface, WritableAccount,
 };
 
 /// Discriminator for explicit VNext Authority invalidation.

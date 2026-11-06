@@ -12,15 +12,15 @@ use crate::{
         vnext_subscription::{RevisionActionData, VNextSubscribeData, VNextTransferData},
     },
     state::{
-        common::PlanStatus, AuthorityConsentRegistry, PlanRevisionRegistry, SubscriptionLifecycleRegistry,
-        VNextPlan, VNextSubscription, VNextSubscriptionAuthority,
+        common::PlanStatus, AuthorityConsentRegistry, PlanRevisionRegistry, SubscriptionLifecycleRegistry, VNextPlan,
+        VNextSubscription, VNextSubscriptionAuthority,
     },
     tests::{
         asserts::TransactionResultExt,
         constants::{MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID, TOKEN_PROGRAM_ID},
         utils::{
-            build_and_send_transaction, current_ts, fetch_account, get_ata_balance, init_ata,
-            init_aux_token_account, init_mint, setup,
+            build_and_send_transaction, current_ts, fetch_account, get_ata_balance, init_ata, init_aux_token_account,
+            init_mint, setup,
         },
     },
     SubscriptionsError,
@@ -35,9 +35,7 @@ fn to_pubkey(address: pinocchio::Address) -> Pubkey {
 }
 
 fn payload_bytes<T>(value: &T) -> Vec<u8> {
-    unsafe {
-        core::slice::from_raw_parts(value as *const T as *const u8, core::mem::size_of::<T>()).to_vec()
-    }
+    unsafe { core::slice::from_raw_parts(value as *const T as *const u8, core::mem::size_of::<T>()).to_vec() }
 }
 
 fn instruction(discriminator: u8, payload: &[u8], accounts: Vec<AccountMeta>) -> Instruction {
@@ -69,7 +67,12 @@ fn create_plan_ix(merchant: &Pubkey, mint: Pubkey, plan_id: u64) -> (Instruction
             mint: mint_address,
             terms: PlanTerms { amount: 1_000_000, period_hours: 24, created_at: 0 },
             end_ts: 0,
-            destinations: [merchant_address, pinocchio::Address::default(), pinocchio::Address::default(), pinocchio::Address::default()],
+            destinations: [
+                merchant_address,
+                pinocchio::Address::default(),
+                pinocchio::Address::default(),
+                pinocchio::Address::default(),
+            ],
             pullers: [pinocchio::Address::default(); 4],
             metadata_uri: metadata("A"),
         },
@@ -122,13 +125,7 @@ fn update_plan_ix(
     )
 }
 
-fn authorize_ix(
-    subscriber: &Pubkey,
-    registry: Pubkey,
-    authority: Pubkey,
-    mint: Pubkey,
-    source: Pubkey,
-) -> Instruction {
+fn authorize_ix(subscriber: &Pubkey, registry: Pubkey, authority: Pubkey, mint: Pubkey, source: Pubkey) -> Instruction {
     let mut data = vec![18];
     data.extend_from_slice(&0u64.to_le_bytes()); // expected generation
     data.extend_from_slice(&0u64.to_le_bytes()); // authorize nonce
@@ -209,7 +206,8 @@ fn cancel_ix(
     revision: u64,
     nonce: u64,
 ) -> Instruction {
-    let data = RevisionActionData { expected_revision: revision, expected_nonce: nonce, not_after_ts: current_ts() + 3_600 };
+    let data =
+        RevisionActionData { expected_revision: revision, expected_nonce: nonce, not_after_ts: current_ts() + 3_600 };
     instruction(
         23,
         &payload_bytes(&data),
@@ -385,8 +383,10 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     let subscriber_address = to_address(&subscriber.pubkey());
     let mint_address = to_address(&mint);
     let source_address = to_address(&source);
-    let consent_registry = to_pubkey(AuthorityConsentRegistry::find_pda(&subscriber_address, &mint_address, &source_address).0);
-    let authority = to_pubkey(VNextSubscriptionAuthority::find_pda(&subscriber_address, &mint_address, &source_address).0);
+    let consent_registry =
+        to_pubkey(AuthorityConsentRegistry::find_pda(&subscriber_address, &mint_address, &source_address).0);
+    let authority =
+        to_pubkey(VNextSubscriptionAuthority::find_pda(&subscriber_address, &mint_address, &source_address).0);
     let authorize = authorize_ix(&subscriber.pubkey(), consent_registry, authority, mint, source);
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize).assert_ok();
 
@@ -395,25 +395,48 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
 
     let plan_address = to_address(&plan);
     let subscription = to_pubkey(VNextSubscription::find_pda(&plan_address, &subscriber_address, &source_address).0);
-    let lifecycle_registry = to_pubkey(
-        SubscriptionLifecycleRegistry::find_pda(&plan_address, &subscriber_address, &source_address).0,
-    );
+    let lifecycle_registry =
+        to_pubkey(SubscriptionLifecycleRegistry::find_pda(&plan_address, &subscriber_address, &source_address).0);
     let plan_bump = VNextPlan::find_pda(&to_address(&merchant.pubkey()), 7).1;
     let plan_account = litesvm.get_account(&plan).unwrap();
     let plan_state = VNextPlan::load(&plan_account.data).unwrap();
     let created_at = plan_state.data.terms.created_at;
 
     let subscribe = subscribe_ix(
-        &subscriber.pubkey(), &merchant.pubkey(), plan, plan_revision_registry, subscription,
-        lifecycle_registry, consent_registry, authority, mint, source, plan_bump, created_at, 0, 0,
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        mint,
+        source,
+        plan_bump,
+        created_at,
+        0,
+        0,
     );
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &subscribe).assert_ok();
 
     // Hold both a customer Subscribe and a merchant Pull signed against lifecycle
     // revision/nonce 1. They remain within their recent-blockhash window below.
     let stale_subscribe = subscribe_ix(
-        &subscriber.pubkey(), &merchant.pubkey(), plan, plan_revision_registry, subscription,
-        lifecycle_registry, consent_registry, authority, mint, source, plan_bump, created_at, 1, 1,
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        mint,
+        source,
+        plan_bump,
+        created_at,
+        1,
+        1,
     );
     let stale_subscribe_signed = Transaction::new(
         &[subscriber],
@@ -422,8 +445,20 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     );
 
     let fresh_transfer = transfer_ix(
-        &subscriber.pubkey(), &merchant.pubkey(), plan, plan_revision_registry, subscription,
-        lifecycle_registry, consent_registry, authority, source, destination, mint, 1, 1, 100_000,
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        source,
+        destination,
+        mint,
+        1,
+        1,
+        100_000,
     );
     let fresh_transfer_signed = Transaction::new(
         &[&merchant],
@@ -444,8 +479,17 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     litesvm.send_transaction(cancel_signed).assert_ok();
 
     let resume = resume_ix(
-        &subscriber.pubkey(), plan, plan_revision_registry, subscription, lifecycle_registry,
-        consent_registry, authority, mint, source, 2, 2,
+        &subscriber.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        mint,
+        source,
+        2,
+        2,
     );
     let resume_signed = Transaction::new(
         &[subscriber],
@@ -457,8 +501,20 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     // Sign a pull while the resumed lifecycle is current, then retain it
     // across CancelNow and re-subscription.
     let stale_transfer = transfer_ix(
-        &subscriber.pubkey(), &merchant.pubkey(), plan, plan_revision_registry, subscription,
-        lifecycle_registry, consent_registry, authority, source, destination, mint, 3, 3, 200_000,
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        source,
+        destination,
+        mint,
+        3,
+        3,
+        200_000,
     );
     let stale_transfer_signed = Transaction::new(
         &[&merchant],
@@ -468,7 +524,14 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
 
     // CancelNow invalidates all previously signed pull/subscribe payloads.
     let cancel_now = cancel_now_ix(
-        &subscriber.pubkey(), &merchant.pubkey(), plan, plan_revision_registry, subscription, lifecycle_registry, 3, 3,
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        3,
+        3,
     );
     let cancel_now_signed = Transaction::new(
         &[subscriber, &merchant],
@@ -479,13 +542,23 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
 
     // Submit the old customer signature after invalidation but before the
     // fresh Subscribe. It must fail on the persistent revision, not time.
-    litesvm
-        .send_transaction(stale_subscribe_signed)
-        .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
+    litesvm.send_transaction(stale_subscribe_signed).assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
 
     let resubscribe = subscribe_ix(
-        &subscriber.pubkey(), &merchant.pubkey(), plan, plan_revision_registry, subscription,
-        lifecycle_registry, consent_registry, authority, mint, source, plan_bump, created_at, 4, 4,
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        mint,
+        source,
+        plan_bump,
+        created_at,
+        4,
+        4,
     );
     let resubscribe_signed = Transaction::new(
         &[subscriber],
@@ -496,9 +569,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
 
     // The transfer signature was retained from revision 3. It must remain
     // stale after the same Subscription PDA is reused at revision 5.
-    litesvm
-        .send_transaction(stale_transfer_signed)
-        .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
+    litesvm.send_transaction(stale_transfer_signed).assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
 
     let lifecycle_account = litesvm.get_account(&lifecycle_registry).unwrap();
     let lifecycle = SubscriptionLifecycleRegistry::load(&lifecycle_account.data).unwrap();

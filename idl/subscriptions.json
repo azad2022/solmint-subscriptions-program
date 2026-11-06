@@ -430,6 +430,182 @@
           "kind": "pdaLinkNode",
           "name": "authorityConsentRegistry"
         }
+      },
+      {
+        "data": {
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "version",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "bump",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "reserved",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "plan",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "subscriber",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "rentPayer",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "revision",
+              "type": {
+                "endian": "le",
+                "format": "u64",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "actionNonce",
+              "type": {
+                "endian": "le",
+                "format": "u64",
+                "kind": "numberTypeNode"
+              }
+            }
+          ],
+          "kind": "structTypeNode"
+        },
+        "kind": "accountNode",
+        "name": "subscriptionLifecycleRegistry",
+        "pda": {
+          "kind": "pdaLinkNode",
+          "name": "subscriptionLifecycleRegistry"
+        }
+      },
+      {
+        "data": {
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "version",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "bump",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "reserved",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "plan",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "merchant",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "rentPayer",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "revision",
+              "type": {
+                "endian": "le",
+                "format": "u64",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "actionNonce",
+              "type": {
+                "endian": "le",
+                "format": "u64",
+                "kind": "numberTypeNode"
+              }
+            }
+          ],
+          "kind": "structTypeNode"
+        },
+        "kind": "accountNode",
+        "name": "planRevisionRegistry",
+        "pda": {
+          "kind": "pdaLinkNode",
+          "name": "planRevisionRegistry"
+        }
       }
     ],
     "definedTypes": [
@@ -1534,6 +1710,42 @@
         "kind": "errorNode",
         "message": "Signed Authority action validity exceeds the protocol maximum",
         "name": "authorityActionDeadlineTooFar"
+      },
+      {
+        "code": 145,
+        "kind": "errorNode",
+        "message": "Lifecycle registry identity does not match supplied accounts",
+        "name": "lifecycleRegistryIdentityMismatch"
+      },
+      {
+        "code": 146,
+        "kind": "errorNode",
+        "message": "Subscription lifecycle revision is stale",
+        "name": "staleSubscriptionLifecycleRevision"
+      },
+      {
+        "code": 147,
+        "kind": "errorNode",
+        "message": "Plan revision is stale",
+        "name": "stalePlanRevision"
+      },
+      {
+        "code": 148,
+        "kind": "errorNode",
+        "message": "Lifecycle action nonce is stale or has already been consumed",
+        "name": "staleLifecycleActionNonce"
+      },
+      {
+        "code": 149,
+        "kind": "errorNode",
+        "message": "Invalid Plan revision Registry PDA derivation",
+        "name": "planRevisionRegistryInvalidPda"
+      },
+      {
+        "code": 150,
+        "kind": "errorNode",
+        "message": "Invalid Subscription lifecycle Registry PDA derivation",
+        "name": "subscriptionLifecycleRegistryInvalidPda"
       }
     ],
     "events": [
@@ -4233,6 +4445,68 @@
           {
             "kind": "variablePdaSeedNode",
             "name": "sourceTokenAccount",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "pdaNode",
+        "name": "subscriptionLifecycleRegistry",
+        "seeds": [
+          {
+            "kind": "constantPdaSeedNode",
+            "type": {
+              "encoding": "utf8",
+              "kind": "stringTypeNode"
+            },
+            "value": {
+              "kind": "stringValueNode",
+              "string": "subscriptionLifecycle"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "plan",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "subscriber",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "pdaNode",
+        "name": "planRevisionRegistry",
+        "seeds": [
+          {
+            "kind": "constantPdaSeedNode",
+            "type": {
+              "encoding": "utf8",
+              "kind": "stringTypeNode"
+            },
+            "value": {
+              "kind": "stringValueNode",
+              "string": "planRevision"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "merchant",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "plan",
             "type": {
               "kind": "publicKeyTypeNode"
             }

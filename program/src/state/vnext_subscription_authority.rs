@@ -107,11 +107,7 @@ impl VNextSubscriptionAuthority {
     }
 
     /// Finds the Authority PDA for the exact non-ATA source account lineage.
-    pub fn find_pda(
-        subscriber: &Address,
-        mint: &Address,
-        source_token_account: &Address,
-    ) -> (Address, u8) {
+    pub fn find_pda(subscriber: &Address, mint: &Address, source_token_account: &Address) -> (Address, u8) {
         Address::find_program_address(
             &[Self::SEED, subscriber.as_ref(), mint.as_ref(), source_token_account.as_ref()],
             &crate::ID,

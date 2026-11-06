@@ -131,25 +131,6 @@ fn vnext_authorize_and_revoke_preserve_persistent_generation() {
     assert_eq!(source_state.delegate.unwrap(), authority);
     assert_eq!(source_state.delegated_amount, u64::MAX);
 
-    // Sign the old authorization before the invalidation lands. Reuse the
-    // still-valid recent blockhash for the invalidation transaction so this
-    // test exercises Program-level freshness rather than blockhash expiry.
-    let stale_authorize = authorize_ix(
-        &subscriber.pubkey(),
-        registry,
-        authority,
-        mint,
-        source,
-        0,
-        0,
-        crate::tests::utils::current_ts() + 3_600,
-    );
-    let stale_signed = Transaction::new(
-        &[&*subscriber],
-        Message::new(std::slice::from_ref(&stale_authorize), Some(&subscriber.pubkey())),
-        litesvm.latest_blockhash(),
-    );
-
     let revoke = revoke_ix(
         &subscriber.pubkey(),
         registry,
@@ -188,6 +169,24 @@ fn vnext_revoke_tombstone_preempts_unsubmitted_authorization() {
     let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, Some(subscriber.pubkey()), &[]);
     let source = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);
     let (registry, authority) = derive_vnext_accounts(&subscriber.pubkey(), &mint, &source);
+
+    // Keep a real customer-signed authorization transaction pending while the
+    // revoke tombstone is submitted with the same still-valid recent blockhash.
+    let stale_authorize = authorize_ix(
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        0,
+        0,
+        crate::tests::utils::current_ts() + 3_600,
+    );
+    let stale_signed = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&stale_authorize), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
 
     let revoke = revoke_ix(
         &subscriber.pubkey(),

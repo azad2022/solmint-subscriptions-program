@@ -384,7 +384,7 @@ mod tests {
     #[test]
     fn duplicate_authorize_never_reapproves_an_active_generation() {
         let mut registry = initialized();
-        registry.authorize(0, 0).unwrap(, 1_000, 1_900);
+        registry.authorize(0, 0, 1_000, 1_900).unwrap();
         let result = registry.authorize(0, 0, 1_000, 1_900);
         assert_eq!(result.unwrap_err(), ProgramError::Custom(SubscriptionsError::AuthorityAlreadyActive as u32));
         assert_eq!(registry.authority_generation, 1);
@@ -394,20 +394,20 @@ mod tests {
     #[test]
     fn revoke_after_authorize_invalidates_the_active_generation() {
         let mut registry = initialized();
-        registry.authorize(0, 0).unwrap(, 1_000, 1_900);
+        registry.authorize(0, 0, 1_000, 1_900).unwrap();
         assert_eq!(registry.revoke(1, 0, 1_000, 1_900).unwrap(), 2);
         assert_eq!(registry.status, AUTHORITY_REGISTRY_REVOKED);
         assert_eq!(registry.authority_generation, 2);
         assert_eq!(registry.revoke_nonce, 1);
-        assert!(registry.authorize(1, 1).is_err(), 1_000, 1_900);
+        assert!(registry.authorize(1, 1, 1_000, 1_900).is_err());
     }
 
     #[test]
     fn revoke_tombstone_preempts_a_signed_first_authorize() {
         let mut registry = initialized();
         // The invalidation is submitted before the older authorization.
-        assert_eq!(registry.revoke(1, 0).unwrap(, 1_000, 1_900), 2);
-        assert!(registry.authorize(0, 0).is_err(), 1_000, 1_900);
+        assert_eq!(registry.revoke(1, 0, 1_000, 1_900).unwrap(), 2);
+        assert!(registry.authorize(0, 0, 1_000, 1_900).is_err());
         assert_eq!(registry.status, AUTHORITY_REGISTRY_REVOKED);
         assert_eq!(registry.authority_generation, 2);
     }
@@ -416,27 +416,27 @@ mod tests {
     fn signed_revoke_is_valid_if_the_authorize_lands_first() {
         let mut registry = initialized();
         // Both signatures were made against the initial empty Registry state.
-        registry.authorize(0, 0).unwrap(, 1_000, 1_900);
-        assert_eq!(registry.revoke(1, 0).unwrap(, 1_000, 1_900), 2);
+        registry.authorize(0, 0, 1_000, 1_900).unwrap();
+        assert_eq!(registry.revoke(1, 0, 1_000, 1_900).unwrap(), 2);
         assert_eq!(registry.status, AUTHORITY_REGISTRY_REVOKED);
     }
 
     #[test]
     fn revoke_can_preempt_a_pending_reauthorization() {
         let mut registry = initialized();
-        registry.authorize(0, 0).unwrap(, 1_000, 1_900);
-        registry.revoke(1, 0).unwrap(, 1_000, 1_900);
+        registry.authorize(0, 0, 1_000, 1_900).unwrap();
+        registry.revoke(1, 0, 1_000, 1_900).unwrap();
         // The next authorize would create generation 3 from Registry generation 2.
         assert_eq!(registry.revoke(3, 1, 1_000, 1_900).unwrap(), 4);
-        assert!(registry.authorize(2, 1).is_err(), 1_000, 1_900);
+        assert!(registry.authorize(2, 1, 1_000, 1_900).is_err());
     }
 
     #[test]
     fn stale_revoke_cannot_revoke_a_later_authority_generation() {
         let mut registry = initialized();
-        registry.authorize(0, 0).unwrap(, 1_000, 1_900);
-        registry.revoke(1, 0).unwrap(, 1_000, 1_900);
-        registry.authorize(2, 1).unwrap(, 1_000, 1_900);
+        registry.authorize(0, 0, 1_000, 1_900).unwrap();
+        registry.revoke(1, 0, 1_000, 1_900).unwrap();
+        registry.authorize(2, 1, 1_000, 1_900).unwrap();
         assert!(registry.revoke(1, 1, 1_000, 1_900).is_err());
         assert_eq!(registry.status, AUTHORITY_REGISTRY_ACTIVE);
         assert_eq!(registry.authority_generation, 3);

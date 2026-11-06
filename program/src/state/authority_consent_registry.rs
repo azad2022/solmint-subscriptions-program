@@ -161,15 +161,7 @@ impl AuthorityConsentRegistry {
         mint: &Address,
         source_token_account: &Address,
     ) -> (Address, u8) {
-        Address::find_program_address(
-            &[
-                Self::SEED,
-                subscriber.as_ref(),
-                mint.as_ref(),
-                source_token_account.as_ref(),
-            ],
-            &crate::ID,
-        )
+        Address::find_program_address(&[Self::SEED, subscriber.as_ref(), mint.as_ref(), source_token_account.as_ref()], &crate::ID)
     }
 
     /// Verifies a supplied PDA and bump against the complete consent tuple.
@@ -179,16 +171,7 @@ impl AuthorityConsentRegistry {
         source_token_account: &Address,
         bump: u8,
     ) -> Result<Address, ProgramError> {
-        Address::create_program_address(
-            &[
-                Self::SEED,
-                subscriber.as_ref(),
-                mint.as_ref(),
-                source_token_account.as_ref(),
-                &[bump],
-            ],
-            &crate::ID,
-        )
+        Address::create_program_address(&[Self::SEED, subscriber.as_ref(), mint.as_ref(), source_token_account.as_ref(), &[bump]], &crate::ID)
         .map_err(|_| SubscriptionsError::AuthorityConsentRegistryInvalidPda.into())
     }
 
@@ -240,14 +223,8 @@ impl AuthorityConsentRegistry {
             return Err(SubscriptionsError::StaleAuthorityActionNonce.into());
         }
 
-        let next_generation = self
-            .authority_generation
-            .checked_add(1)
-            .ok_or(SubscriptionsError::ArithmeticOverflow)?;
-        let next_nonce = self
-            .authorize_nonce
-            .checked_add(1)
-            .ok_or(SubscriptionsError::ArithmeticOverflow)?;
+        let next_generation = self.authority_generation.checked_add(1).ok_or(SubscriptionsError::ArithmeticOverflow)?;
+        let next_nonce = self.authorize_nonce.checked_add(1).ok_or(SubscriptionsError::ArithmeticOverflow)?;
 
         self.authority_generation = next_generation;
         self.authorize_nonce = next_nonce;
@@ -278,9 +255,7 @@ impl AuthorityConsentRegistry {
         }
 
         let current_generation = self.authority_generation;
-        let expected_next = current_generation
-            .checked_add(1)
-            .ok_or(SubscriptionsError::ArithmeticOverflow)?;
+        let expected_next = current_generation.checked_add(1).ok_or(SubscriptionsError::ArithmeticOverflow)?;
 
         let target_matches = if self.status == AUTHORITY_REGISTRY_ACTIVE {
             current_generation == expected_authority_generation
@@ -295,10 +270,7 @@ impl AuthorityConsentRegistry {
         let next_generation = expected_authority_generation
             .checked_add(1)
             .ok_or(SubscriptionsError::ArithmeticOverflow)?;
-        let next_nonce = self
-            .revoke_nonce
-            .checked_add(1)
-            .ok_or(SubscriptionsError::ArithmeticOverflow)?;
+        let next_nonce = self.revoke_nonce.checked_add(1).ok_or(SubscriptionsError::ArithmeticOverflow)?;
 
         self.authority_generation = next_generation;
         self.revoke_nonce = next_nonce;
@@ -334,16 +306,7 @@ mod tests {
 
     fn initialized() -> AuthorityConsentRegistry {
         let mut bytes = [0u8; AuthorityConsentRegistry::LEN];
-        AuthorityConsentRegistry::init(
-            &mut bytes,
-            &addr(1),
-            &addr(2),
-            &addr(3),
-            &addr(4),
-            &addr(5),
-            7,
-        )
-        .unwrap();
+        AuthorityConsentRegistry::init(&mut bytes, &addr(1), &addr(2), &addr(3), &addr(4), &addr(5), 7).unwrap();
         let mut copy = [0u8; AuthorityConsentRegistry::LEN];
         copy.copy_from_slice(&bytes);
         unsafe { core::ptr::read_unaligned(copy.as_ptr() as *const AuthorityConsentRegistry) }
@@ -460,7 +423,6 @@ mod tests {
         assert!(registry.revoke(1, u64::MAX, 1_000, 1_900).is_err());
         assert_eq!(registry.authority_generation, 0);
     }
-
 
     #[test]
     fn expired_or_overlong_actions_do_not_consume_registry_state() {

@@ -571,7 +571,7 @@ pub enum SubscriptionsInstruction {
     #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
     #[codama(account(name = "event_authority", docs = "Event authority PDA", default_value = pda("eventAuthority")))]
     #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
-    TransferSubscriptionVNext(#[codama(name = "transfer_data")] TransferData) = 26,
+    TransferSubscriptionVNext(#[codama(name = "transfer_data")] VNextTransferData) = 26,
 
     #[codama(skip)]
     #[codama(account(
@@ -669,7 +669,7 @@ impl SubscriptionsInstruction {
                 Ok(Self::ResumeSubscriptionVNext(loaded.clone()))
             }
             vnext_subscription::TRANSFER_DISCRIMINATOR => {
-                let loaded = TransferData::load(rest)?;
+                let loaded = VNextTransferData::load(rest)?;
                 Ok(Self::TransferSubscriptionVNext(loaded.clone()))
             }
             revoke_abandoned_delegation::DISCRIMINATOR => Ok(Self::RevokeAbandonedDelegation),

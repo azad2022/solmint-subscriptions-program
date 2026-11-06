@@ -8,16 +8,13 @@ use pinocchio_token::instructions::Approve as ApproveSpl;
 use pinocchio_token_2022::instructions::Approve as Approve2022;
 
 use crate::{
-    check_token_account_mint,
-    check_token_account_owner,
+    check_token_account_mint, check_token_account_owner,
     constants::TOKEN_2022_PROGRAM_ID,
     get_token_account_delegate,
     helpers::system::resolve_optional_payer,
-    state::{
-        AuthorityConsentRegistry, VNextSubscriptionAuthority,
-    },
-    AccountCheck, MintInterface, ProgramAccount, ProgramAccountInit, SignerAccount,
-    SubscriptionsError, SystemAccount, TokenAccountInterface, TokenProgramInterface, WritableAccount,
+    state::{AuthorityConsentRegistry, VNextSubscriptionAuthority},
+    AccountCheck, MintInterface, ProgramAccount, ProgramAccountInit, SignerAccount, SubscriptionsError, SystemAccount,
+    TokenAccountInterface, TokenProgramInterface, WritableAccount,
 };
 
 /// Discriminator for explicit VNext Authority consent.

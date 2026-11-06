@@ -249,6 +249,22 @@ The final protocol must define an action-specific nonce or equivalent monotonic 
 
 For Authority Consent Registry v1, authorize and revoke use independent monotonic u64 counters, consumed only on successful state transitions. The on-chain clock is Unix timestamp seconds. The inclusive `not_after_ts` deadline must not be in the past and must be no more than **86,400 seconds (24 hours)** after execution time. Both state transition methods enforce this bound before writing. Expired and overlong actions fail closed. This is a protocol-selected maximum for the current Authority state slice, not a promise that every smart-wallet proposal will remain executable for 24 hours.
 
+#### Versioned Authority instruction ABI — selected
+
+Both instructions use a 24-byte packed payload following a one-byte instruction discriminator:
+
+| Payload offset | Length | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 8 | expected_generation | u64 little-endian |
+| 8 | 8 | expected_nonce | u64 little-endian |
+| 16 | 8 | not_after_ts | i64 little-endian |
+
+- `AuthorizeSubscriptionAuthorityVNext`: discriminator **18**. Accounts in order: subscriber signer/writable, Registry writable, VNext Authority writable, mint readonly, source token account writable, System Program readonly, token program readonly, optional Authority rent payer signer/writable.
+- `RevokeSubscriptionAuthorityVNext`: discriminator **19**. Accounts in order: subscriber signer/writable, Registry writable, VNext Authority writable (may be absent), mint readonly, source account writable (may be absent for a closed-account tombstone), System Program readonly, token program readonly, optional rent receiver writable.
+- The Registry is always funded by the subscriber and is never rent-sponsored. The closeable VNext Authority may be funded by a separate payer; revoke requires the exact recorded payer as rent receiver when that payer differs from subscriber.
+
+These are the first VNext instruction payloads; Subscription creation, transfer and lifecycle control ABI remains open.
+
 Durable Nonce transactions and supported program-controlled-wallet/multisig proposals remain in product scope. They may be enabled only when the Program rejects the operation after its on-chain deadline or after the expected generation/revision/action nonce has advanced. Recent blockhash expiry alone is insufficient. The test matrix must retain a signed proposal, invalidate the underlying state, and then execute the delayed transaction to prove it fails.
 
 ## 7. Legacy instruction closure and migration
@@ -298,7 +314,35 @@ The baseline uses repr(C, packed) account structures and fixed byte offsets/leng
 
 The Authority Consent Registry v1 ABI is specified in §3.1 and is additive: existing v0.5.0 account layouts and discriminators 0–4 are unchanged. Its Rust struct has a compile-time length assertion in the test suite and fixed field offsets.
 
-The remaining VNext account types—Authority, Subscription lifecycle revision, Plan revision, and any migration record—still require a byte-level contract before implementation. No existing v1 layout may be changed in place unless a tested byte-compatible migration is proven. Each additional registry must be independently derived, versioned and persistent across the corresponding closable account's lifecycle.
+#### VNext SubscriptionAuthority v1 account ABI — selected
+
+- Account discriminator: **8**; schema version: **1**.
+- PDA seeds: `["SubscriptionAuthorityVNext", subscriber, mint, source_token_account]`.
+- Total account length: **204 bytes**; integers are little-endian.
+
+| Offset | Length | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 1 | discriminator | u8 = 8 |
+| 1 | 1 | version | u8 = 1 |
+| 2 | 1 | bump | u8 |
+| 3 | 1 | reserved | u8 = 0 |
+| 4 | 32 | subscriber | public key |
+| 36 | 32 | mint | public key |
+| 68 | 32 | source_token_account | public key |
+| 100 | 32 | Registry PDA | public key |
+| 132 | 32 | token_program | public key |
+| 164 | 32 | rent_payer | public key |
+| 196 | 8 | authority_generation | u64 |
+
+The Authority is closeable on revoke; its rent is returned to the recorded payer (or an explicitly supplied matching receiver). Its identity includes the exact non-ATA source account and cannot be substituted across accounts with the same subscriber/mint.
+
+#### Persistent lifecycle revision v1 accounts — selected state slices
+
+- `SubscriptionLifecycleRegistry`: discriminator **6**, version1, **116 bytes**, seeds `["subscriptionLifecycle", plan_pda, subscriber]`. It stores Plan, subscriber, recorded payer, monotonic revision and action nonce.
+- `PlanRevisionRegistry`: discriminator **7**, version1, **116 bytes**, seeds `["planRevision", merchant, plan_pda]`. It stores Plan, merchant, recorded payer, monotonic revision and action nonce.
+- Both are designed as persistent, non-closeable lineages. Their state methods use checked increments and expected revision/nonce comparisons.
+
+The state structs and unit-test definitions exist. The Subscription and Plan handlers have **not yet been changed to allocate or consume these registries**; therefore anti-ABA controls are not active for product operations yet. No existing v1 layout may be changed in place unless a tested byte-compatible migration is proven.
 
 ### 8.2 Instruction data and account metas
 
@@ -407,8 +451,8 @@ Current status at document authoring:
 
 - G1-0 baseline/branch checkpoint: PASS / COMPLETE according to the latest recorded progress checkpoint.
 - G1-1 independent source intake: IN PROGRESS. The MIT fork and reproducible v0.5.0 baseline are established; fork-native CI visibility remains UNKNOWN.
-- G1-2 protocol/ABI: IN PROGRESS. Authority Consent Registry v1 account ABI is specified; the full instruction and cross-account ABI is not frozen.
-- G1-3 Program implementation: IN PROGRESS — Authority Registry state model, PDA derivation, checked generation/nonce transitions, deadline validation and unit tests are added. Runtime handlers and transfer integration remain NOT IMPLEMENTED.
+- G1-2 protocol/ABI: IN PROGRESS. Authority Consent Registry and VNext Authority v1 account layouts plus authorize/revoke instruction payload/account order are specified. Complete Subscription, Plan, transfer, migration and client ABI is not frozen.
+- G1-3 Program implementation: IN PROGRESS — Authority Registry, tuple-bound Authority, Subscription lifecycle and Plan revision state structs are added; authorize/revoke handlers are wired to dispatch; three LiteSVM scenarios are written. Exact-source Rust/LiteSVM execution and Codama IDL regeneration are pending.
 - G1-4 migration: NOT STARTED.
 - G1-5 adversarial proof: NOT STARTED.
 - G1-6 independent audit: NOT STARTED.
@@ -426,4 +470,4 @@ Before G1-3, the following must be checked in a single reviewed change set:
 6. Migration and rollback contracts are defined.
 7. Every supported capability has explicit state, authorization, migration and regression requirements.
 
-Rust Program state source and its unit-test definitions have changed; those tests have not yet been executed in this session. IDL/client regeneration and runtime instruction integration remain pending. No Program ID/keypair, signer, Devnet/Mainnet transaction, Production database/configuration, customer consent, accounting entry or customer funds were changed.
+Rust Program state, Authority handlers, instruction dispatch, IDL source and LiteSVM test source have changed. At the latest checkpoint no VNext Rust unit tests, integration tests, SBF build or regenerated-IDL comparison have completed successfully on the final Fork SHA. Subscription/Plan lifecycle registries are state-only and not wired into their legacy handlers; VNext transfer paths and migration are not implemented. The source still declares the legacy Program ID, and no deployment Program ID/keypair has been generated. No signer, Devnet/Mainnet transaction, Production database/configuration, customer consent, accounting entry or customer funds were changed.

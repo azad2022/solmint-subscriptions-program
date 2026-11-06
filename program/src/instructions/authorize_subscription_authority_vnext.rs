@@ -117,7 +117,7 @@ pub fn process(accounts: &mut [AccountView], data: &crate::AuthorityActionData) 
         let mut binding = registry.try_borrow_mut()?;
         let consent = AuthorityConsentRegistry::load_mut(&mut binding)?;
         consent.validate_identity(
-            registry.address(),
+            &registry_address,
             subscriber.address(),
             token_mint.address(),
             source_token_account.address(),

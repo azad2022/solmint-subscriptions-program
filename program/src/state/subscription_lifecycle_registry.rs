@@ -134,7 +134,7 @@ impl SubscriptionLifecycleRegistry {
             &[Self::SEED, plan.as_ref(), subscriber.as_ref(), source_token_account.as_ref(), &[bump]],
             &crate::ID,
         )
-            .map_err(|_| SubscriptionsError::SubscriptionLifecycleRegistryInvalidPda.into())
+        .map_err(|_| SubscriptionsError::SubscriptionLifecycleRegistryInvalidPda.into())
     }
 
     /// Confirms that the stored Plan/subscriber identity matches all supplied accounts.
@@ -215,8 +215,14 @@ mod tests {
         let mut registry = initialized();
         assert_eq!(registry.advance(0, 0).unwrap(), 1);
         assert_eq!(registry.advance(1, 1).unwrap(), 2);
-        { let actual = registry.revision; assert_eq!(actual, 2); }
-        { let actual = registry.action_nonce; assert_eq!(actual, 2); }
+        {
+            let actual = registry.revision;
+            assert_eq!(actual, 2);
+        }
+        {
+            let actual = registry.action_nonce;
+            assert_eq!(actual, 2);
+        }
     }
 
     #[test]
@@ -226,7 +232,10 @@ mod tests {
         registry.advance(1, 1).unwrap(); // terminal close
         registry.advance(2, 2).unwrap(); // a new Subscribe at the same logical PDA
         assert!(registry.advance(1, 1).is_err()); // old CancelNow/Resume approval
-        { let actual = registry.revision; assert_eq!(actual, 3); }
+        {
+            let actual = registry.revision;
+            assert_eq!(actual, 3);
+        }
     }
 
     #[test]
@@ -234,11 +243,17 @@ mod tests {
         let mut registry = initialized();
         registry.revision = u64::MAX;
         assert!(registry.advance(u64::MAX, 0).is_err());
-        { let actual = registry.action_nonce; assert_eq!(actual, 0); }
+        {
+            let actual = registry.action_nonce;
+            assert_eq!(actual, 0);
+        }
 
         registry.revision = 0;
         registry.action_nonce = u64::MAX;
         assert!(registry.advance(0, u64::MAX).is_err());
-        { let actual = registry.revision; assert_eq!(actual, 0); }
+        {
+            let actual = registry.revision;
+            assert_eq!(actual, 0);
+        }
     }
 }

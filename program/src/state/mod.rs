@@ -4,6 +4,7 @@
 //! (PDA). Accounts share a one-byte discriminator at offset 0 so that the program
 //! can distinguish account types during deserialization.
 
+pub mod authority_consent_registry;
 pub mod common;
 pub mod fixed_delegation;
 pub mod header;
@@ -13,6 +14,10 @@ pub mod subscription_authority;
 pub mod subscription_delegation;
 pub mod versioning;
 
+pub use authority_consent_registry::{
+    AuthorityConsentRegistry, AUTHORITY_REGISTRY_ACTIVE, AUTHORITY_REGISTRY_REVOKED,
+    MAX_AUTHORITY_ACTION_LIFETIME_SECS,
+};
 pub use common::{
     find_plan_pda, find_subscription_pda, validate_plan_end_ts, verify_delegation_pda, verify_plan_pda,
     AccountDiscriminator, PlanStatus, DELEGATE_BASE_SEED,

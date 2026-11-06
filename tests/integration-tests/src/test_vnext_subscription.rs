@@ -233,7 +233,8 @@ fn cancel_now_ix(
     revision: u64,
     nonce: u64,
 ) -> Instruction {
-    let data = RevisionActionData { expected_revision: revision, expected_nonce: nonce, not_after_ts: current_ts() + 3_600 };
+    let data =
+        RevisionActionData { expected_revision: revision, expected_nonce: nonce, not_after_ts: current_ts() + 3_600 };
     instruction(
         24,
         &payload_bytes(&data),
@@ -263,7 +264,8 @@ fn resume_ix(
     revision: u64,
     nonce: u64,
 ) -> Instruction {
-    let data = RevisionActionData { expected_revision: revision, expected_nonce: nonce, not_after_ts: current_ts() + 3_600 };
+    let data =
+        RevisionActionData { expected_revision: revision, expected_nonce: nonce, not_after_ts: current_ts() + 3_600 };
     instruction(
         25,
         &payload_bytes(&data),

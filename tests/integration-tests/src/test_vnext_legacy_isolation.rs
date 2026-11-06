@@ -25,8 +25,8 @@ fn to_address(key: &Pubkey) -> pinocchio::Address {
 #[test]
 #[ignore = "requires SOLMINT_LEGACY_PROGRAM_SO from the immutable v0.5.0 build"]
 fn vnext_legacy_program_cannot_delegate_a_non_ata_source() {
-    let legacy_program = std::env::var("SOLMINT_LEGACY_PROGRAM_SO")
-        .expect("CI must supply the exact immutable legacy Program binary");
+    let legacy_program =
+        std::env::var("SOLMINT_LEGACY_PROGRAM_SO").expect("CI must supply the exact immutable legacy Program binary");
     let mut litesvm = LiteSVM::new();
     litesvm.add_program_from_file(PROGRAM_ID.to_bytes(), legacy_program).unwrap();
 
@@ -35,14 +35,7 @@ fn vnext_legacy_program_cannot_delegate_a_non_ata_source() {
     litesvm.set_sysvar::<Clock>(&clock);
 
     let subscriber = init_wallet(&mut litesvm, 100_000_000_000);
-    let mint = init_mint(
-        &mut litesvm,
-        TOKEN_PROGRAM_ID,
-        MINT_DECIMALS,
-        1_000_000_000,
-        Some(subscriber.pubkey()),
-        &[],
-    );
+    let mint = init_mint(&mut litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, Some(subscriber.pubkey()), &[]);
     let source = init_aux_token_account(&mut litesvm, mint, subscriber.pubkey(), 1_000_000);
 
     let subscriber_address = to_address(&subscriber.pubkey());

@@ -75,6 +75,8 @@ pub enum AccountDiscriminator {
     SubscriptionLifecycleRegistry = 6,
     /// Persistent administration revision for a Plan PDA.
     PlanRevisionRegistry = 7,
+    /// Token-delegate Authority bound to a VNext source-account consent lineage.
+    VNextSubscriptionAuthority = 8,
 }
 
 impl TryFrom<u8> for AccountDiscriminator {
@@ -89,6 +91,7 @@ impl TryFrom<u8> for AccountDiscriminator {
             5 => Ok(Self::AuthorityConsentRegistry),
             6 => Ok(Self::SubscriptionLifecycleRegistry),
             7 => Ok(Self::PlanRevisionRegistry),
+            8 => Ok(Self::VNextSubscriptionAuthority),
             _ => Err(SubscriptionsError::InvalidAccountDiscriminator.into()),
         }
     }
@@ -105,6 +108,7 @@ impl From<AccountDiscriminator> for u8 {
             AccountDiscriminator::AuthorityConsentRegistry => 5,
             AccountDiscriminator::SubscriptionLifecycleRegistry => 6,
             AccountDiscriminator::PlanRevisionRegistry => 7,
+            AccountDiscriminator::VNextSubscriptionAuthority => 8,
         }
     }
 }

@@ -66,6 +66,10 @@ impl TryFrom<u32> for SubscriptionsError {
             148 => Ok(Self::StaleLifecycleActionNonce),
             149 => Ok(Self::PlanRevisionRegistryInvalidPda),
             150 => Ok(Self::SubscriptionLifecycleRegistryInvalidPda),
+            151 => Ok(Self::VNextAuthorityInvalidPda),
+            152 => Ok(Self::VNextAuthorityIdentityMismatch),
+            153 => Ok(Self::NonAssociatedSourceAccountRequired),
+            154 => Ok(Self::ForeignTokenDelegatePresent),
             // Fixed delegation errors (300-399)
             300 => Ok(Self::AmountExceedsLimit),
             301 => Ok(Self::FixedDelegationExpiryInPast),
@@ -243,6 +247,16 @@ pub enum SubscriptionsError {
     PlanRevisionRegistryInvalidPda,
     #[error("Invalid Subscription lifecycle Registry PDA derivation")]
     SubscriptionLifecycleRegistryInvalidPda,
+
+    // --- VNext Authority errors (151--154) ---
+    #[error("Invalid VNext SubscriptionAuthority PDA derivation")]
+    VNextAuthorityInvalidPda = 151,
+    #[error("VNext SubscriptionAuthority identity or generation does not match")]
+    VNextAuthorityIdentityMismatch,
+    #[error("VNext source token account must not be the canonical Associated Token Account")]
+    NonAssociatedSourceAccountRequired,
+    #[error("Source token account already has a different token delegate")]
+    ForeignTokenDelegatePresent,
 
     // --- Fixed delegation errors (300--399) ---
     #[error("Transfer amount exceeds delegation limit")]

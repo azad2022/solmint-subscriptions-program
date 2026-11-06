@@ -60,6 +60,12 @@ impl TryFrom<u32> for SubscriptionsError {
             142 => Ok(Self::StaleAuthorityActionNonce),
             143 => Ok(Self::AuthorityActionExpired),
             144 => Ok(Self::AuthorityActionDeadlineTooFar),
+            145 => Ok(Self::LifecycleRegistryIdentityMismatch),
+            146 => Ok(Self::StaleSubscriptionLifecycleRevision),
+            147 => Ok(Self::StalePlanRevision),
+            148 => Ok(Self::StaleLifecycleActionNonce),
+            149 => Ok(Self::PlanRevisionRegistryInvalidPda),
+            150 => Ok(Self::SubscriptionLifecycleRegistryInvalidPda),
             // Fixed delegation errors (300-399)
             300 => Ok(Self::AmountExceedsLimit),
             301 => Ok(Self::FixedDelegationExpiryInPast),
@@ -223,6 +229,20 @@ pub enum SubscriptionsError {
     AuthorityActionExpired,
     #[error("Signed Authority action validity exceeds the protocol maximum")]
     AuthorityActionDeadlineTooFar,
+
+    // --- Lifecycle revision registry errors (145--150) ---
+    #[error("Lifecycle registry identity does not match supplied accounts")]
+    LifecycleRegistryIdentityMismatch = 145,
+    #[error("Subscription lifecycle revision is stale")]
+    StaleSubscriptionLifecycleRevision,
+    #[error("Plan revision is stale")]
+    StalePlanRevision,
+    #[error("Lifecycle action nonce is stale or has already been consumed")]
+    StaleLifecycleActionNonce,
+    #[error("Invalid Plan revision Registry PDA derivation")]
+    PlanRevisionRegistryInvalidPda,
+    #[error("Invalid Subscription lifecycle Registry PDA derivation")]
+    SubscriptionLifecycleRegistryInvalidPda,
 
     // --- Fixed delegation errors (300--399) ---
     #[error("Transfer amount exceeds delegation limit")]

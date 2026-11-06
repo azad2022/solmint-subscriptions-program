@@ -12,7 +12,8 @@ use crate::{
     constants::TOKEN_2022_PROGRAM_ID,
     get_token_account_delegate,
     state::{AuthorityConsentRegistry, VNextSubscriptionAuthority},
-    AccountCheck, AccountClose, ProgramAccount, ProgramAccountInit, SignerAccount, SubscriptionsError, SystemAccount,
+    AccountCheck, AccountClose, MintInterface, ProgramAccount, ProgramAccountInit, SignerAccount, SubscriptionsError,
+    SystemAccount,
     TokenAccountInterface, TokenProgramInterface, WritableAccount,
 };
 
@@ -36,6 +37,7 @@ pub fn process(accounts: &mut [AccountView], data: &crate::AuthorityActionData) 
     WritableAccount::check(source_token_account)?;
     SystemAccount::check(system_program)?;
     TokenProgramInterface::check(token_program)?;
+    MintInterface::check_with_program(token_mint, token_program)?;
 
     if rem.len() > 1 {
         return Err(SubscriptionsError::InvalidInstructionData.into());
@@ -54,6 +56,15 @@ pub fn process(accounts: &mut [AccountView], data: &crate::AuthorityActionData) 
     );
     if authority_address != *authority.address() {
         return Err(SubscriptionsError::VNextAuthorityInvalidPda.into());
+    }
+
+    let expected_ata = pinocchio::Address::find_program_address(
+        &[subscriber.address().as_ref(), token_program.address().as_ref(), token_mint.address().as_ref()],
+        &pinocchio_associated_token_account::ID,
+    )
+    .0;
+    if expected_ata == *source_token_account.address() {
+        return Err(SubscriptionsError::NonAssociatedSourceAccountRequired.into());
     }
 
     let authority_exists = authority.data_len() > 0;
@@ -155,6 +166,9 @@ pub fn process(accounts: &mut [AccountView], data: &crate::AuthorityActionData) 
 
     if let Some(rent_payer) = authority_rent_payer {
         if rent_payer == *subscriber.address() {
+            if !rem.is_empty() {
+                return Err(SubscriptionsError::InvalidInstructionData.into());
+            }
             ProgramAccount::close(authority, subscriber)?;
         } else {
             let receiver = rem.first().ok_or(SubscriptionsError::NotEnoughAccountKeys)?;

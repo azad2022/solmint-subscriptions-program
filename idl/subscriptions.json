@@ -319,6 +319,117 @@
           "kind": "pdaLinkNode",
           "name": "eventAuthority"
         }
+      },
+      {
+        "data": {
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "version",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "status",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "bump",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "subscriber",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "mint",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "sourceTokenAccount",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "tokenProgram",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "rentPayer",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "authorityGeneration",
+              "type": {
+                "endian": "le",
+                "format": "u64",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "authorizeNonce",
+              "type": {
+                "endian": "le",
+                "format": "u64",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "revokeNonce",
+              "type": {
+                "endian": "le",
+                "format": "u64",
+                "kind": "numberTypeNode"
+              }
+            }
+          ],
+          "kind": "structTypeNode"
+        },
+        "kind": "accountNode",
+        "name": "authorityConsentRegistry",
+        "pda": {
+          "kind": "pdaLinkNode",
+          "name": "authorityConsentRegistry"
+        }
       }
     ],
     "definedTypes": [
@@ -1381,6 +1492,48 @@
         "kind": "errorNode",
         "message": "Self program account does not match this program",
         "name": "invalidSelfProgram"
+      },
+      {
+        "code": 138,
+        "kind": "errorNode",
+        "message": "Invalid Authority Consent Registry PDA derivation",
+        "name": "authorityConsentRegistryInvalidPda"
+      },
+      {
+        "code": 139,
+        "kind": "errorNode",
+        "message": "Authority Consent Registry identity does not match supplied accounts",
+        "name": "authorityConsentRegistryIdentityMismatch"
+      },
+      {
+        "code": 140,
+        "kind": "errorNode",
+        "message": "Authority is already active; Init cannot be used as implicit reauthorization",
+        "name": "authorityAlreadyActive"
+      },
+      {
+        "code": 141,
+        "kind": "errorNode",
+        "message": "Authority generation does not match the signed expected generation",
+        "name": "staleAuthorityGeneration"
+      },
+      {
+        "code": 142,
+        "kind": "errorNode",
+        "message": "Authority action nonce is stale or has already been consumed",
+        "name": "staleAuthorityActionNonce"
+      },
+      {
+        "code": 143,
+        "kind": "errorNode",
+        "message": "Signed Authority action has expired",
+        "name": "authorityActionExpired"
+      },
+      {
+        "code": 144,
+        "kind": "errorNode",
+        "message": "Signed Authority action validity exceeds the protocol maximum",
+        "name": "authorityActionDeadlineTooFar"
       }
     ],
     "events": [
@@ -4044,6 +4197,44 @@
             "value": {
               "kind": "stringValueNode",
               "string": "event_authority"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "pdaNode",
+        "name": "authorityConsentRegistry",
+        "seeds": [
+          {
+            "kind": "constantPdaSeedNode",
+            "type": {
+              "encoding": "utf8",
+              "kind": "stringTypeNode"
+            },
+            "value": {
+              "kind": "stringValueNode",
+              "string": "authorityConsent"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "subscriber",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "mint",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "sourceTokenAccount",
+            "type": {
+              "kind": "publicKeyTypeNode"
             }
           }
         ]

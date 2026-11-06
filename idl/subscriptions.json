@@ -606,6 +606,106 @@
           "kind": "pdaLinkNode",
           "name": "planRevisionRegistry"
         }
+      },
+      {
+        "data": {
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "discriminator",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "version",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "bump",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "reserved",
+              "type": {
+                "endian": "le",
+                "format": "u8",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "subscriber",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "mint",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "sourceTokenAccount",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "registry",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "tokenProgram",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "rentPayer",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "authorityGeneration",
+              "type": {
+                "endian": "le",
+                "format": "u64",
+                "kind": "numberTypeNode"
+              }
+            }
+          ],
+          "kind": "structTypeNode"
+        },
+        "kind": "accountNode",
+        "name": "vnextSubscriptionAuthority",
+        "pda": {
+          "kind": "pdaLinkNode",
+          "name": "vnextSubscriptionAuthority"
+        }
       }
     ],
     "definedTypes": [
@@ -1198,6 +1298,42 @@
           ],
           "kind": "structTypeNode"
         }
+      },
+      {
+        "kind": "definedTypeNode",
+        "name": "authorityActionData",
+        "type": {
+          "kind": "structTypeNode",
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "expectedGeneration",
+              "type": {
+                "endian": "le",
+                "format": "u64",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "expectedNonce",
+              "type": {
+                "endian": "le",
+                "format": "u64",
+                "kind": "numberTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "notAfterTs",
+              "type": {
+                "endian": "le",
+                "format": "i64",
+                "kind": "numberTypeNode"
+              }
+            }
+          ]
+        }
       }
     ],
     "errors": [
@@ -1746,6 +1882,30 @@
         "kind": "errorNode",
         "message": "Invalid Subscription lifecycle Registry PDA derivation",
         "name": "subscriptionLifecycleRegistryInvalidPda"
+      },
+      {
+        "code": 151,
+        "kind": "errorNode",
+        "message": "Invalid VNext SubscriptionAuthority PDA derivation",
+        "name": "vnextAuthorityInvalidPda"
+      },
+      {
+        "code": 152,
+        "kind": "errorNode",
+        "message": "VNext SubscriptionAuthority identity or generation does not match",
+        "name": "vnextAuthorityIdentityMismatch"
+      },
+      {
+        "code": 153,
+        "kind": "errorNode",
+        "message": "VNext source token account must not be the canonical Associated Token Account",
+        "name": "nonAssociatedSourceAccountRequired"
+      },
+      {
+        "code": 154,
+        "kind": "errorNode",
+        "message": "Source token account already has a different token delegate",
+        "name": "foreignTokenDelegatePresent"
       }
     ],
     "events": [
@@ -4507,6 +4667,44 @@
           {
             "kind": "variablePdaSeedNode",
             "name": "plan",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          }
+        ]
+      },
+      {
+        "kind": "pdaNode",
+        "name": "vnextSubscriptionAuthority",
+        "seeds": [
+          {
+            "kind": "constantPdaSeedNode",
+            "type": {
+              "encoding": "utf8",
+              "kind": "stringTypeNode"
+            },
+            "value": {
+              "kind": "stringValueNode",
+              "string": "SubscriptionAuthorityVNext"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "subscriber",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "mint",
+            "type": {
+              "kind": "publicKeyTypeNode"
+            }
+          },
+          {
+            "kind": "variablePdaSeedNode",
+            "name": "sourceTokenAccount",
             "type": {
               "kind": "publicKeyTypeNode"
             }

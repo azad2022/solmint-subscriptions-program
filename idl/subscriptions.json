@@ -4362,6 +4362,368 @@
         ],
         "kind": "instructionNode",
         "name": "cancelSubscriptionNow"
+      },
+      {
+        "kind": "instructionNode",
+        "name": "authorizeSubscriptionAuthorityVNext",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "subscriber",
+            "isSigner": true,
+            "isWritable": true,
+            "docs": [
+              "Subscriber authorizing this exact source token account"
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "registry",
+            "isSigner": false,
+            "isWritable": true,
+            "docs": [
+              "Persistent Authority Consent Registry keyed by subscriber, mint and source account"
+            ],
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "authorityConsentRegistry"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "subscriber",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "subscriber"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "mint",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "tokenMint"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "sourceTokenAccount",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "sourceTokenAccount"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "authority",
+            "isSigner": false,
+            "isWritable": true,
+            "docs": [
+              "VNext token-delegate Authority for the exact source account"
+            ],
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "vnextSubscriptionAuthority"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "subscriber",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "subscriber"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "mint",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "tokenMint"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "sourceTokenAccount",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "sourceTokenAccount"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "tokenMint",
+            "isSigner": false,
+            "isWritable": false,
+            "docs": [
+              "SPL Token or Token-2022 mint"
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "sourceTokenAccount",
+            "isSigner": false,
+            "isWritable": true,
+            "docs": [
+              "Customer-owned non-ATA token account"
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "systemProgram",
+            "isSigner": false,
+            "isWritable": false,
+            "docs": [
+              "System Program"
+            ],
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "11111111111111111111111111111111"
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "tokenProgram",
+            "isSigner": false,
+            "isWritable": false,
+            "docs": [
+              "SPL Token or Token-2022 program"
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "payer",
+            "isSigner": true,
+            "isWritable": true,
+            "docs": [
+              "Optional sponsor of the closeable VNext Authority account; subscriber funds the permanent Registry"
+            ],
+            "isOptional": true
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 18
+            },
+            "defaultValueStrategy": "omitted"
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "authorityActionData",
+            "type": {
+              "kind": "definedTypeLinkNode",
+              "name": "authorityActionData"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "optionalAccountStrategy": "omitted"
+      },
+      {
+        "kind": "instructionNode",
+        "name": "revokeSubscriptionAuthorityVNext",
+        "accounts": [
+          {
+            "kind": "instructionAccountNode",
+            "name": "subscriber",
+            "isSigner": true,
+            "isWritable": true,
+            "docs": [
+              "Subscriber authorizing this exact source token account"
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "registry",
+            "isSigner": false,
+            "isWritable": true,
+            "docs": [
+              "Persistent Authority Consent Registry keyed by subscriber, mint and source account"
+            ],
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "authorityConsentRegistry"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "subscriber",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "subscriber"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "mint",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "tokenMint"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "sourceTokenAccount",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "sourceTokenAccount"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "authority",
+            "isSigner": false,
+            "isWritable": true,
+            "docs": [
+              "VNext token-delegate Authority for the exact source account"
+            ],
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "vnextSubscriptionAuthority"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "subscriber",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "subscriber"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "mint",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "tokenMint"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "sourceTokenAccount",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "sourceTokenAccount"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "tokenMint",
+            "isSigner": false,
+            "isWritable": false,
+            "docs": [
+              "Mint used as part of the Registry identity"
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "sourceTokenAccount",
+            "isSigner": false,
+            "isWritable": true,
+            "docs": [
+              "Customer-owned non-ATA token account"
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "systemProgram",
+            "isSigner": false,
+            "isWritable": false,
+            "docs": [
+              "System Program"
+            ],
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "11111111111111111111111111111111"
+            }
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "tokenProgram",
+            "isSigner": false,
+            "isWritable": false,
+            "docs": [
+              "SPL Token or Token-2022 program"
+            ]
+          },
+          {
+            "kind": "instructionAccountNode",
+            "name": "receiver",
+            "isSigner": false,
+            "isWritable": true,
+            "docs": [
+              "Required when closing a sponsored Authority; must match its recorded rent payer"
+            ],
+            "isOptional": true
+          }
+        ],
+        "arguments": [
+          {
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "type": {
+              "kind": "numberTypeNode",
+              "format": "u8",
+              "endian": "le"
+            },
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 19
+            },
+            "defaultValueStrategy": "omitted"
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "authorityActionData",
+            "type": {
+              "kind": "definedTypeLinkNode",
+              "name": "authorityActionData"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "optionalAccountStrategy": "omitted"
       }
     ],
     "kind": "programNode",

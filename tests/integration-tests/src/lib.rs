@@ -52,3 +52,5 @@ mod test_update_plan;
 mod test_vnext_authority_consent;
 #[cfg(test)]
 mod test_vnext_subscription;
+#[cfg(test)]
+mod test_vnext_legacy_isolation;

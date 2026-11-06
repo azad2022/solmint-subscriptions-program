@@ -3,7 +3,7 @@
 **Status:** DRAFT — PARTIAL RUNTIME IMPLEMENTATION; ABI NOT FROZEN; NO DEPLOYMENT  
 **Work branch:** feat/solmint-g1-authority-vnext  
 **Baseline branch:** solmint/v0.5.0-baseline  
-**Reviewed source HEAD:** 52afc0d2a4a360989b2c1775a47af62037562c41  
+**Reviewed source HEAD:** c7882a51862f07eec781ba5aa3b82eee4eb24212  
 **Immutable upstream source baseline:** solana-foundation/subscriptions@364a41976c33347d092902443bbec2def9227e75  
 **Purpose:** G1-2 protocol and ABI design checkpoint
 
@@ -377,7 +377,7 @@ The current additive VNext instruction assignments are:
 | ResumeSubscriptionVNext | 25 | RevisionActionData, 24 bytes |
 | TransferSubscriptionVNext | 26 | VNextTransferData, 120 bytes |
 
-The existing instruction discriminators 0–17 remain unchanged. The current Rust enum and Codama annotations define account order and signer/writable flags. TransferHook remaining accounts are forwarded through the existing Token-2022 helper. These assignments are implemented but are not ABI-frozen until the regenerated IDL is synchronized, golden byte/account-meta tests pass and the protocol receives independent review.
+The existing instruction discriminators 0–17 remain unchanged. The current Rust enum and Codama annotations define account order and signer/writable flags. TransferHook remaining accounts are forwarded through the existing Token-2022 helper. These assignments are implemented and the Codama IDL has been regenerated and committed at source checkpoint c7882a5. The exact-source CI equality check is pending; golden byte/account-meta tests and independent review remain required.
 
 `VNextTransferData` v1 is exactly 120 bytes, little-endian/packed:
 
@@ -413,7 +413,7 @@ The intended retained surface remains:
 - VNext Subscribe, regular cancellation, immediate dual-authorized cancellation, Resume, transfer and re-subscription (runtime implemented; integration tests added; CI pending);
 - Plan Owner plus up to four additional Pullers;
 - SPL Token and Token-2022/TransferHook transfer forwarding (code path present; VNext-specific TransferHook tests pending);
-- events and generated Codama IDL (current generated-vs-committed comparison must pass);
+- events and generated Codama IDL (VNext ABI regenerated and committed; exact-source CI equality check pending);
 - fixed/recurring VNext permissions, finite Plan support, Plan deletion/rent recovery, full rent-sponsorship policy, legacy migration/recovery and smart-wallet/durable-nonce compatibility (NOT IMPLEMENTED / OPEN).
 
 The exact financial/business semantics for partial final periods, rent sponsor quotas/recovery and split/multiple destinations must follow the approved product contract and executable tests. This document does not invent those values or policies.
@@ -503,4 +503,4 @@ Before G1-3, the following must be checked in a single reviewed change set:
 6. Migration and rollback contracts are defined.
 7. Every supported capability has explicit state, authorization, migration and regression requirements.
 
-VNext Authority, Plan and Subscription runtime handlers are now present. Plan create/update and Subscription Subscribe/Cancel/CancelNow/Resume/re-subscribe use persistent revision registries; VNext transfer revalidates live Plan/Subscription revisions, Authority generation and a bounded deadline. LiteSVM tests have been added for delayed signed Authority authorization, Plan ABA update, Subscription lifecycle transitions, valid token transfer, stale Subscribe/Transfer and legacy Program non-ATA isolation. The most recent CI run was pinned to an earlier source SHA and stopped at Rust formatting before executing Program tests/build; formatting was corrected on a newer Fork SHA, so exact-source unit/integration/SBF/IDL evidence is still pending. The committed Codama IDL also previously differed from generated output and must be refreshed from the exact source. The source still declares the legacy Program ID, and no deployment Program ID/keypair has been generated. No signer, Devnet/Mainnet transaction, Production database/configuration, customer consent, accounting entry or customer funds were changed.
+VNext Authority, Plan and Subscription runtime handlers are now present. Plan create/update and Subscription Subscribe/Cancel/CancelNow/Resume/re-subscribe use persistent revision registries; VNext transfer revalidates live Plan/Subscription revisions, Authority generation and a bounded deadline. LiteSVM tests have been added for delayed signed Authority authorization, Plan ABA update, Subscription lifecycle transitions, valid token transfer, stale Subscribe/Transfer and legacy Program non-ATA isolation. On source SHA ebb3b87, Rust formatting, Program unit tests, deterministic SBF build, the full LiteSVM suite, exact immutable legacy v0.5.0 SBF build and the legacy non-ATA isolation regression all passed. The only failure was the generated-IDL byte comparison; the exact generated 187,274-character IDL was then committed at c7882a5. A final exact-source CI run with the synchronized IDL is pending. The source still declares the legacy Program ID, and no deployment Program ID/keypair has been generated. No signer, Devnet/Mainnet transaction, Production database/configuration, customer consent, accounting entry or customer funds were changed.

@@ -1,6 +1,5 @@
 use pinocchio::{
     cpi::Seed,
-    error::ProgramError,
     sysvars::{clock::Clock, Sysvar},
     AccountView, ProgramResult,
 };

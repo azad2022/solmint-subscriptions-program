@@ -122,8 +122,11 @@ fn validate_transfer_freshness(
 ) -> ProgramResult {
     AuthorityConsentRegistry::validate_action_deadline(now, data.not_after_ts)?;
 
-    if plan_revision != data.expected_plan_revision || plan_nonce != data.expected_plan_nonce {
+    if plan_revision != data.expected_plan_revision {
         return Err(SubscriptionsError::StalePlanRevision.into());
+    }
+    if plan_nonce != data.expected_plan_nonce {
+        return Err(SubscriptionsError::StaleLifecycleActionNonce.into());
     }
     if lifecycle_revision != data.expected_lifecycle_revision {
         return Err(SubscriptionsError::StaleSubscriptionLifecycleRevision.into());
@@ -934,7 +937,7 @@ mod transfer_freshness_tests {
         );
         assert_custom_error(
             validate_transfer_freshness(&data, 100, 4, 8, 9, 12, 3),
-            SubscriptionsError::StalePlanRevision,
+            SubscriptionsError::StaleLifecycleActionNonce,
         );
     }
 

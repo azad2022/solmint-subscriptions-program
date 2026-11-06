@@ -1,5 +1,7 @@
 use solana_instruction::{AccountMeta, Instruction};
+use solana_message::Message;
 use solana_pubkey::Pubkey;
+use solana_transaction::Transaction;
 use solana_signer::Signer;
 use spl_token_2022_interface::state::Account as TokenAccount;
 
@@ -129,6 +131,25 @@ fn vnext_authorize_and_revoke_preserve_persistent_generation() {
     assert_eq!(source_state.delegate.unwrap(), authority);
     assert_eq!(source_state.delegated_amount, u64::MAX);
 
+    // Sign the old authorization before the invalidation lands. Reuse the
+    // still-valid recent blockhash for the invalidation transaction so this
+    // test exercises Program-level freshness rather than blockhash expiry.
+    let stale_authorize = authorize_ix(
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        0,
+        0,
+        crate::tests::utils::current_ts() + 3_600,
+    );
+    let stale_signed = Transaction::new(
+        &[subscriber],
+        Message::new(std::slice::from_ref(&stale_authorize), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+
     let revoke = revoke_ix(
         &subscriber.pubkey(),
         registry,
@@ -139,7 +160,12 @@ fn vnext_authorize_and_revoke_preserve_persistent_generation() {
         0,
         crate::tests::utils::current_ts() + 3_600,
     );
-    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &revoke).assert_ok();
+    let revoke_signed = Transaction::new(
+        &[subscriber],
+        Message::new(std::slice::from_ref(&revoke), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(revoke_signed).assert_ok();
 
     let registry_account = litesvm.get_account(&registry).unwrap();
     let registry_state = AuthorityConsentRegistry::load(&registry_account.data).unwrap();
@@ -183,19 +209,10 @@ fn vnext_revoke_tombstone_preempts_unsubmitted_authorization() {
     assert_eq!(status, AUTHORITY_REGISTRY_REVOKED);
     assert!(litesvm.get_account(&authority).is_none());
 
-    // This is the old signed authorization payload: its generation and nonce
-    // are stale after the tombstone, so it cannot create a delegate.
-    let stale_authorize = authorize_ix(
-        &subscriber.pubkey(),
-        registry,
-        authority,
-        mint,
-        source,
-        0,
-        0,
-        crate::tests::utils::current_ts() + 3_600,
-    );
-    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &stale_authorize)
+    // The exact transaction signed before revoke is still submitted after
+    // invalidation. It must fail on the persistent generation tombstone.
+    litesvm
+        .send_transaction(stale_signed)
         .assert_err(SubscriptionsError::StaleAuthorityGeneration);
 
     let source_state = fetch_account::<TokenAccount>(litesvm, &source);

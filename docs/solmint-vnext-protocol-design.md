@@ -97,7 +97,43 @@ All three public keys are part of the logical identity. A Registry for one sourc
 
 The source token account is therefore a first-class authority boundary, not an optional lookup hint.
 
-**Not frozen:** Registry PDA seed prefix/order, account discriminator, account owner/version bytes, field order, field widths, bump placement, optional accounts, rent payer/refund model, and exact instruction accounts. The remainder of the supplied §7.1 prompt is missing; its required Registry fields must be incorporated before those details are designed.
+#### Authority Consent Registry v1 account ABI — selected
+
+The first executable state slice fixes the account identity and byte layout as follows:
+
+- Account discriminator: **5** (the existing v0.5.0 account discriminators 0–4 are unchanged).
+- Schema version: **1**.
+- PDA seeds, in order: UTF-8 bytes for `authorityConsent`, subscriber public key, mint public key, source token account public key.
+- Integer encoding: little-endian.
+- Total account length: **188 bytes**.
+- The account is program-owned and is a persistent tombstone/consent lineage. No ordinary instruction may close or reset it.
+
+| Offset | Length | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 1 | discriminator | u8 = 5 |
+| 1 | 1 | version | u8 = 1 |
+| 2 | 1 | status | u8; 0 = revoked, 1 = active |
+| 3 | 1 | bump | u8 |
+| 4 | 32 | subscriber | public key |
+| 36 | 32 | mint | public key |
+| 68 | 32 | source_token_account | public key |
+| 100 | 32 | token_program | public key |
+| 132 | 32 | rent_payer | public key |
+| 164 | 8 | authority_generation | u64 |
+| 172 | 8 | authorize_nonce | u64 |
+| 180 | 8 | revoke_nonce | u64 |
+
+The rent payer is recorded. The Registry is not closeable because that would reset the generation lineage; the rent-exempt principal is therefore retained. Any future excess-lamport recovery must preserve the exact data, owner and rent-exempt floor and return only excess to the recorded payer. The Registry must not be sponsored by SolMint.
+
+#### Authority transition rules — selected
+
+- A newly allocated Registry initializes as `REVOKED`, generation 0, authorize nonce 0, revoke nonce 0.
+- Authorize requires subscriber authorization, the exact current generation, the next authorize nonce, and a Program-checked deadline. It increments generation and authorize nonce with checked arithmetic, then sets status to `ACTIVE`. An already-active Registry rejects Init; retrying Init cannot re-approve a revoked token delegate.
+- Revoke has a separate monotonic nonce. When active, it must target the current authority generation. When revoked, it may target exactly the next generation, pre-empting one signed-but-not-yet-landed authorization. It increments generation to target + 1 and advances revoke nonce. This makes a signed invalidation valid whether the one pending authorization lands before or after it; later generations and stale replays fail.
+- The two action counters are independent so an invalidate signed against an absent Registry is not made stale solely because one pending authorize transaction lands first.
+- Generation and nonce arithmetic is checked; overflow fails without changing state.
+
+The transition implementation is in `program/src/state/authority_consent_registry.rs`. Runtime instruction handlers, token CPI, actual source-account owner/mint checks, registry allocation and transfer-path enforcement are **not yet implemented**. The account ABI is frozen for this state-only v1 slice; instruction ABI is not yet frozen.
 
 ### 3.2 Required identity checks
 
@@ -211,7 +247,7 @@ Every state-changing authorization that could be delayed must have Program-enfor
 
 The final protocol must define an action-specific nonce or equivalent monotonic one-time value, an expected state revision, and a bounded validity deadline. The Program—not the client—must validate these at execution time.
 
-The exact scope of nonce uniqueness (per Registry, per action class, per Subscription or another reviewed scope), nonce consumption timing, deadline clock, deadline units, permitted maximum lifetime and error behavior are open design decisions. They are not assigned values in this draft because the supplied prompt is incomplete and the existing proposal leaves these choices for protocol review.
+For Authority Consent Registry v1, authorize and revoke use independent monotonic u64 counters, consumed only on successful state transitions. The on-chain clock is Unix timestamp seconds. The inclusive `not_after_ts` deadline must not be in the past and must be no more than **86,400 seconds (24 hours)** after execution time. Both state transition methods enforce this bound before writing. Expired and overlong actions fail closed. This is a protocol-selected maximum for the current Authority state slice, not a promise that every smart-wallet proposal will remain executable for 24 hours.
 
 Durable Nonce transactions and supported program-controlled-wallet/multisig proposals remain in product scope. They may be enabled only when the Program rejects the operation after its on-chain deadline or after the expected generation/revision/action nonce has advanced. Recent blockhash expiry alone is insufficient. The test matrix must retain a signed proposal, invalidate the underlying state, and then execute the delayed transaction to prove it fails.
 
@@ -260,19 +296,9 @@ Rollback must not restore an invalidated generation or replayable approval. A ro
 
 The baseline uses repr(C, packed) account structures and fixed byte offsets/lengths. The existing Plan pins PLAN_LEN_V1 = 491; SubscriptionDelegation has a frozen V1_LEN used by recovery logic. These are compatibility constraints, not fields to casually edit.
 
-Before implementation, the ABI must specify for every VNext account:
+The Authority Consent Registry v1 ABI is specified in §3.1 and is additive: existing v0.5.0 account layouts and discriminators 0–4 are unchanged. Its Rust struct has a compile-time length assertion in the test suite and fixed field offsets.
 
-- canonical PDA identity and exact seed sequence;
-- owner Program ID;
-- account discriminator and schema version;
-- exact byte offsets, field widths, signedness and endianness;
-- exact account length and rules for future extension;
-- initialization and migration behavior;
-- who may write/close/reclaim it;
-- rent payer, recorded funder and refund behavior;
-- integrity checks for identity, bump, version and cross-account references.
-
-No existing v1 layout may be changed in place unless a tested byte-compatible migration is proven. The preferred implementation must use an explicit new account version/kind or a separately derived VNext account where needed; the exact choice remains OPEN pending the missing user requirements and account migration review.
+The remaining VNext account types—Authority, Subscription lifecycle revision, Plan revision, and any migration record—still require a byte-level contract before implementation. No existing v1 layout may be changed in place unless a tested byte-compatible migration is proven. Each additional registry must be independently derived, versioned and persistent across the corresponding closable account's lifecycle.
 
 ### 8.2 Instruction data and account metas
 
@@ -362,22 +388,18 @@ The independent route is therefore a new Program ID for VNext unless legitimate,
 
 ## 12. Design decisions still OPEN
 
-The following must be resolved before byte-level ABI freeze:
+The following decisions remain open for the next implementation slices:
 
-1. The missing continuation of the supplied prompt, beginning after §7.1's word “حداقل”, including the required Authority Consent Registry fields and all later sections.
-2. Whether the Registry is the sole source of Authority generation or whether a separate Authority state account also carries a mirrored generation; the exact cross-account consistency rule.
-3. Whether the VNext Authority account is itself derived from (subscriber,mint,source_token_account) or another separately reviewed identity, and how the token-program ID is bound.
-4. Exact generation and revision integer widths, signedness, initial values and overflow policy.
-5. Action nonce scope, consumption rules, retry semantics and replay error model.
-6. Deadline clock, units, maximum permitted lifetime, equality boundary and smart-wallet/durable-nonce behavior.
-7. Exact Registry and lifecycle account field set, order, offsets, lengths, account discriminators and versioning.
-8. Exact instruction list, discriminators, payloads, account order, optional/remaining-account rules and error codes.
-9. Registry rent payer, permanent-rent treatment, excess-rent reclamation and sponsor recovery.
-10. Legacy lazy-bootstrap versus explicit migration, and whether any legacy account can be transferred under a temporary compatibility bridge.
-11. Complete token-account authority policy, including delegate/close-authority replacement, supported Token-2022 extensions and TransferHook account forwarding.
-12. Exact migration and rollback semantics for old Plans, Subscriptions, balances, sponsors, Pullers, pending signed transactions and entitlement/accounting cutover.
+1. Whether the VNext token-delegate Authority PDA itself is derived from the exact triple (subscriber, mint, source_token_account), and the precise relation between it and the persistent Registry.
+2. The versioned instruction list, discriminators, payload byte layouts, account order, signer/writable flags, optional-account rules and error codes.
+3. Exact persistent Subscription lifecycle Registry and Plan revision Registry layouts, seeds and transitions.
+4. How all current fixed, recurring and Subscription transfer paths consume the Registry and validate the exact source account on every CPI path.
+5. Legacy lazy-bootstrap versus explicit migration, and whether any legacy account can be transferred under a temporary compatibility bridge.
+6. Complete token-account authority policy, including pre-existing delegate and close-authority replacement, supported Token-2022 extensions and TransferHook account forwarding.
+7. Rent payer exposure and excess-rent reclamation for persistent registries; no ordinary close/reset path is permitted.
+8. Exact migration and rollback semantics for old Plans, Subscriptions, balances, sponsors, Pullers, pending signed transactions and entitlement/accounting cutover.
 
-Until these are resolved by the remaining prompt and source/adversarial review, this document must remain DRAFT. Do not implement fields or assign ABI values by guessing.
+The owner explicitly authorized continuing the design from the repository structure without the omitted prompt continuation. The Registry v1 field set and layout above are therefore selected engineering decisions, not claims that they appeared in the missing prompt. These remaining decisions must be resolved from source invariants and adversarial tests before their own ABI slices are frozen.
 
 ## 13. Checkpoint and implementation gates
 
@@ -385,8 +407,8 @@ Current status at document authoring:
 
 - G1-0 baseline/branch checkpoint: PASS / COMPLETE according to the latest recorded progress checkpoint.
 - G1-1 independent source intake: IN PROGRESS. The MIT fork and reproducible v0.5.0 baseline are established; fork-native CI visibility remains UNKNOWN.
-- G1-2 protocol/ABI: IN PROGRESS — DRAFT ONLY. This document is not the accepted ABI freeze.
-- G1-3 Program implementation: NOT STARTED.
+- G1-2 protocol/ABI: IN PROGRESS. Authority Consent Registry v1 account ABI is specified; the full instruction and cross-account ABI is not frozen.
+- G1-3 Program implementation: IN PROGRESS — Authority Registry state model, PDA derivation, checked generation/nonce transitions, deadline validation and unit tests are added. Runtime handlers and transfer integration remain NOT IMPLEMENTED.
 - G1-4 migration: NOT STARTED.
 - G1-5 adversarial proof: NOT STARTED.
 - G1-6 independent audit: NOT STARTED.
@@ -404,4 +426,4 @@ Before G1-3, the following must be checked in a single reviewed change set:
 6. Migration and rollback contracts are defined.
 7. Every supported capability has explicit state, authorization, migration and regression requirements.
 
-No Rust Program source, IDL, Program ID, keypair, signer, Devnet/Mainnet transaction, Production database/configuration, customer consent, accounting entry or customer funds were changed by this design checkpoint. No tests are claimed as run by this document-only checkpoint.
+Rust Program state source and its unit-test definitions have changed; those tests have not yet been executed in this session. IDL/client regeneration and runtime instruction integration remain pending. No Program ID/keypair, signer, Devnet/Mainnet transaction, Production database/configuration, customer consent, accounting entry or customer funds were changed.

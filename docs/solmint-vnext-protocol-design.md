@@ -342,6 +342,13 @@ The Authority is closeable on revoke; its rent is returned to the recorded payer
 - `PlanRevisionRegistry`: discriminator **7**, version1, **116 bytes**, seeds `["planRevision", merchant, plan_pda]`. It stores Plan, merchant, recorded payer, monotonic revision and action nonce.
 - Both are designed as persistent, non-closeable lineages. Their state methods use checked increments and expected revision/nonce comparisons.
 
+#### VNext Plan and Subscription account ABI — implemented, pending freeze
+
+- `VNextPlan`: discriminator **9**, version **1**, **500 bytes**, PDA seeds `["planVNext", merchant, plan_id_le]`. It stores the merchant owner, current Plan revision and the VNext PlanData snapshot. The persistent PlanRevisionRegistry is the monotonic authority for updates; VNext Plan creation initializes both at revision 1.
+- `VNextSubscription`: discriminator **10**, version **1**, **260 bytes**, PDA seeds `["subscriptionVNext", plan_pda, subscriber, source_token_account]`. It stores the exact source token account, mint, token program, rent payer, immutable billing terms, period accounting, expiry timestamp, lifecycle revision and Authority generation.
+- Neither VNext Plan nor Subscription has an ordinary close/reset instruction. There is no `DeletePlanVNext` or `CloseSubscriptionVNext` discriminator in the current enum. A cancelled Subscription can be re-subscribed only after its stop boundary; its persistent lifecycle Registry is advanced rather than reset.
+- VNext Plan v1 rejects non-zero `end_ts`; finite Plan semantics and full-period/expiry policy remain open for a later version.
+
 The state structs are allocated and consumed by the VNext runtime handlers. Subscribe, ordinary Cancel, dual-authorized CancelNow, Resume and re-subscribe advance the persistent lifecycle Registry atomically with the Subscription state. Plan create/update advance the persistent Plan revision Registry. Every VNext transfer checks the live revision/nonce snapshots. No VNext DeletePlan or Subscription-close instruction exists; re-subscribe reuses the existing Subscription PDA only after its cancellation boundary and never resets the persistent lifecycle Registry. No existing v1 layout may be changed in place unless a tested byte-compatible migration is proven.
 
 ### 8.2 Instruction data and account metas

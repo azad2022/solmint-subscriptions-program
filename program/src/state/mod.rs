@@ -12,13 +12,12 @@ pub mod plan;
 pub mod plan_revision_registry;
 pub mod recurring_delegation;
 pub mod subscription_authority;
-pub mod subscription_lifecycle_registry;
 pub mod subscription_delegation;
+pub mod subscription_lifecycle_registry;
 pub mod versioning;
 
 pub use authority_consent_registry::{
-    AuthorityConsentRegistry, AUTHORITY_REGISTRY_ACTIVE, AUTHORITY_REGISTRY_REVOKED,
-    MAX_AUTHORITY_ACTION_LIFETIME_SECS,
+    AuthorityConsentRegistry, AUTHORITY_REGISTRY_ACTIVE, AUTHORITY_REGISTRY_REVOKED, MAX_AUTHORITY_ACTION_LIFETIME_SECS,
 };
 pub use common::{
     find_plan_pda, find_subscription_pda, validate_plan_end_ts, verify_delegation_pda, verify_plan_pda,

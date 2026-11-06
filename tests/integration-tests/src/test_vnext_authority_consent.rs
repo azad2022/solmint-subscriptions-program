@@ -1,8 +1,8 @@
 use solana_instruction::{AccountMeta, Instruction};
 use solana_message::Message;
 use solana_pubkey::Pubkey;
-use solana_transaction::Transaction;
 use solana_signer::Signer;
+use solana_transaction::Transaction;
 use spl_token_2022_interface::state::Account as TokenAccount;
 
 use crate::{
@@ -211,9 +211,7 @@ fn vnext_revoke_tombstone_preempts_unsubmitted_authorization() {
 
     // The exact transaction signed before revoke is still submitted after
     // invalidation. It must fail on the persistent generation tombstone.
-    litesvm
-        .send_transaction(stale_signed)
-        .assert_err(SubscriptionsError::StaleAuthorityGeneration);
+    litesvm.send_transaction(stale_signed).assert_err(SubscriptionsError::StaleAuthorityGeneration);
 
     let source_state = fetch_account::<TokenAccount>(litesvm, &source);
     assert!(source_state.delegate.is_none());

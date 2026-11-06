@@ -38,13 +38,13 @@ use codama::CodamaInstructions;
 use pinocchio::error::ProgramError;
 
 use crate::event_engine::EMIT_EVENT_IX_DISC;
-pub use authority_consent::AuthorityActionData;
 use crate::instructions::cancel_subscription_now::CancelSubscriptionNowData;
 use crate::instructions::create_plan::PlanData;
 use crate::instructions::resume_subscription::ResumeData;
 use crate::instructions::subscribe::SubscribeData;
 use crate::instructions::update_plan::UpdatePlanData;
 use crate::SubscriptionsError;
+pub use authority_consent::AuthorityActionData;
 
 /// All instructions supported by the subscriptions program.
 ///
@@ -398,8 +398,12 @@ pub enum SubscriptionsInstruction {
     ))]
     CancelSubscriptionNow(#[codama(name = "cancel_subscription_now_data")] CancelSubscriptionNowData) = 17,
 
-
-    #[codama(account(name = "subscriber", signer, writable, docs = "The subscriber who authorizes the exact source token account"))]
+    #[codama(account(
+        name = "subscriber",
+        signer,
+        writable,
+        docs = "The subscriber who authorizes the exact source token account"
+    ))]
     #[codama(account(
         name = "registry",
         writable,
@@ -416,11 +420,22 @@ pub enum SubscriptionsInstruction {
     #[codama(account(name = "source_token_account", writable, docs = "Customer-owned non-ATA token account"))]
     #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
     #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
-    #[codama(account(name = "payer", signer, writable, optional, docs = "Optional sponsor for the closeable VNext Authority account; the subscriber funds the permanent Registry"))]
+    #[codama(account(
+        name = "payer",
+        signer,
+        writable,
+        optional,
+        docs = "Optional sponsor for the closeable VNext Authority account; the subscriber funds the permanent Registry"
+    ))]
     #[codama(optional_account_strategy = omitted)]
     AuthorizeSubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 18,
 
-    #[codama(account(name = "subscriber", signer, writable, docs = "The subscriber invalidating the VNext Authority consent"))]
+    #[codama(account(
+        name = "subscriber",
+        signer,
+        writable,
+        docs = "The subscriber invalidating the VNext Authority consent"
+    ))]
     #[codama(account(
         name = "registry",
         writable,
@@ -434,10 +449,19 @@ pub enum SubscriptionsInstruction {
         default_value = pda("vnextSubscriptionAuthority", [seed("subscriber", account("subscriber")), seed("mint", account("token_mint")), seed("sourceTokenAccount", account("source_token_account"))])
     ))]
     #[codama(account(name = "token_mint", docs = "Mint used as part of the Registry identity"))]
-    #[codama(account(name = "source_token_account", writable, docs = "Exact source account; may be closed for tombstone-only invalidation"))]
+    #[codama(account(
+        name = "source_token_account",
+        writable,
+        docs = "Exact source account; may be closed for tombstone-only invalidation"
+    ))]
     #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
     #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
-    #[codama(account(name = "receiver", writable, optional, docs = "Required when closing a sponsored Authority; must match its recorded rent payer"))]
+    #[codama(account(
+        name = "receiver",
+        writable,
+        optional,
+        docs = "Required when closing a sponsored Authority; must match its recorded rent payer"
+    ))]
     #[codama(optional_account_strategy = omitted)]
     RevokeSubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 19,
 

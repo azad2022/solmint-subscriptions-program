@@ -269,9 +269,8 @@ impl AuthorityConsentRegistry {
             return Err(SubscriptionsError::StaleAuthorityGeneration.into());
         }
 
-        let next_generation = expected_authority_generation
-            .checked_add(1)
-            .ok_or(SubscriptionsError::ArithmeticOverflow)?;
+        let next_generation =
+            expected_authority_generation.checked_add(1).ok_or(SubscriptionsError::ArithmeticOverflow)?;
         let next_nonce = self.revoke_nonce.checked_add(1).ok_or(SubscriptionsError::ArithmeticOverflow)?;
 
         self.authority_generation = next_generation;
@@ -288,9 +287,8 @@ impl AuthorityConsentRegistry {
         if not_after_ts < now_ts {
             return Err(SubscriptionsError::AuthorityActionExpired.into());
         }
-        let maximum = now_ts
-            .checked_add(MAX_AUTHORITY_ACTION_LIFETIME_SECS)
-            .ok_or(SubscriptionsError::ArithmeticOverflow)?;
+        let maximum =
+            now_ts.checked_add(MAX_AUTHORITY_ACTION_LIFETIME_SECS).ok_or(SubscriptionsError::ArithmeticOverflow)?;
         if not_after_ts > maximum {
             return Err(SubscriptionsError::AuthorityActionDeadlineTooFar.into());
         }

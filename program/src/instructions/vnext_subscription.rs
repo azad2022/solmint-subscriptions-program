@@ -1072,10 +1072,7 @@ mod transfer_freshness_tests {
         let mut next_period_data = payload();
         next_period_data.expected_period_start_ts = 3_700;
         next_period_data.expected_amount_pulled_in_period = 0;
-        assert_eq!(
-            validate_transfer_period_snapshot(&next_period_data, 100, 25, 3_600, 3_700).unwrap(),
-            (3_700, 0)
-        );
+        assert_eq!(validate_transfer_period_snapshot(&next_period_data, 100, 25, 3_600, 3_700).unwrap(), (3_700, 0));
     }
 
     #[test]

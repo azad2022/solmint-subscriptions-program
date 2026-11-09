@@ -612,31 +612,6 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     );
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &subscribe).assert_ok();
 
-    // Hold both a customer Subscribe and a merchant Pull signed against lifecycle
-    // revision/nonce 1. They remain within their recent-blockhash window below.
-    let stale_subscribe = subscribe_ix(
-        &subscriber.pubkey(),
-        &merchant.pubkey(),
-        plan,
-        plan_revision_registry,
-        subscription,
-        lifecycle_registry,
-        consent_registry,
-        authority,
-        mint,
-        source,
-        plan_bump,
-        created_at,
-        1,
-        1,
-        TOKEN_PROGRAM_ID,
-    );
-    let stale_subscribe_signed = Transaction::new(
-        &[&*subscriber],
-        Message::new(std::slice::from_ref(&stale_subscribe), Some(&subscriber.pubkey())),
-        litesvm.latest_blockhash(),
-    );
-
     let fresh_transfer = transfer_ix(
         &subscriber.pubkey(),
         &merchant.pubkey(),
@@ -674,10 +649,35 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         Message::new(std::slice::from_ref(&fresh_transfer), Some(&merchant.pubkey())),
         litesvm.latest_blockhash(),
     );
-    litesvm.send_transaction(replayed_transfer)
-        .assert_err(SubscriptionsError::StaleSubscriptionTransferSnapshot);
+    litesvm.send_transaction(replayed_transfer).assert_err(SubscriptionsError::StaleSubscriptionTransferSnapshot);
     assert_eq!(fetch_account::<TokenAccount>(litesvm, &source).amount, 900_000);
     assert_eq!(get_ata_balance(litesvm, &destination), 100_000);
+
+    // Hold a customer Subscribe signed against lifecycle revision/nonce 1.
+    // Sign it after the blockhash refresh above so the later stale-state check
+    // cannot be confused with a transaction-level BlockhashNotFound result.
+    let stale_subscribe = subscribe_ix(
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        mint,
+        source,
+        plan_bump,
+        created_at,
+        1,
+        1,
+        TOKEN_PROGRAM_ID,
+    );
+    let stale_subscribe_signed = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&stale_subscribe), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
 
     // A validly signed pull must expire at the Program's on-chain deadline even
     // while its recent blockhash remains valid. No token or period usage changes.

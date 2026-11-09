@@ -21,7 +21,7 @@ fn to_address(key: &Pubkey) -> pinocchio::Address {
 }
 
 /// The immutable v0.5.0 dispatcher must reject every additive VNext
-/// instruction discriminator (18..=26) before account processing. This is a
+/// instruction discriminator (18..=27) before account processing. This is a
 /// binary-compatibility boundary test, not proof of a separate Program ID.
 #[test]
 #[ignore = "requires SOLMINT_LEGACY_PROGRAM_SO from the immutable v0.5.0 build"]
@@ -33,7 +33,7 @@ fn vnext_legacy_program_rejects_all_vnext_instruction_discriminators() {
 
     let payer = init_wallet(&mut litesvm, 100_000_000_000);
 
-    for discriminator in 18u8..=26 {
+    for discriminator in 18u8..=27 {
         let ix = Instruction { program_id: PROGRAM_ID, accounts: vec![], data: vec![discriminator] };
         let transaction = Transaction::new(
             &[&payer],

@@ -37,6 +37,9 @@ pub fn process_instruction(
         SubscriptionsInstruction::TransferSubscriptionVNext(data) => {
             vnext_subscription::process_transfer(accounts, &data)
         }
+        SubscriptionsInstruction::TransferSubscriptionVNextV2(data) => {
+            vnext_subscription::process_transfer_v2(accounts, &data)
+        }
         SubscriptionsInstruction::CreateFixedDelegation(data) => create_fixed_delegation::process(accounts, &data),
         SubscriptionsInstruction::CreateRecurringDelegation(data) => {
             create_recurring_delegation::process(accounts, &data)

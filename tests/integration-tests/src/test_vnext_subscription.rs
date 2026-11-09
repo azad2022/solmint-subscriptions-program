@@ -100,11 +100,12 @@ fn update_plan_ix(
     expected_nonce: u64,
     expected_metadata: &str,
     next_metadata: &str,
+    not_after_ts: i64,
 ) -> Instruction {
     let data = VNextPlanUpdateData {
         expected_revision,
         expected_nonce,
-        not_after_ts: current_ts() + 3_600,
+        not_after_ts,
         expected_status: PlanStatus::Active as u8,
         status: PlanStatus::Active as u8,
         expected_pullers: [pinocchio::Address::default(); 4],
@@ -301,6 +302,7 @@ fn transfer_ix(
     lifecycle_revision: u64,
     lifecycle_nonce: u64,
     amount: u64,
+    not_after_ts: i64,
 ) -> Instruction {
     let data = VNextTransferData {
         amount,
@@ -311,7 +313,7 @@ fn transfer_ix(
         expected_lifecycle_revision: lifecycle_revision,
         expected_lifecycle_nonce: lifecycle_nonce,
         expected_authority_generation: 1,
-        not_after_ts: current_ts() + 3_600,
+        not_after_ts,
     };
     instruction(
         26,
@@ -341,14 +343,14 @@ fn vnext_plan_revision_rejects_delayed_aba_update() {
     let (create, plan, registry) = create_plan_ix(&merchant.pubkey(), mint, 7);
     build_and_send_transaction(litesvm, &[merchant], &merchant.pubkey(), &create).assert_ok();
 
-    let stale = update_plan_ix(&merchant.pubkey(), plan, registry, 1, 1, "A", "C");
+    let stale = update_plan_ix(&merchant.pubkey(), plan, registry, 1, 1, "A", "C", current_ts() + 3_600);
     let stale_signed = Transaction::new(
         &[&*merchant],
         Message::new(std::slice::from_ref(&stale), Some(&merchant.pubkey())),
         litesvm.latest_blockhash(),
     );
 
-    let to_b = update_plan_ix(&merchant.pubkey(), plan, registry, 1, 1, "A", "B");
+    let to_b = update_plan_ix(&merchant.pubkey(), plan, registry, 1, 1, "A", "B", current_ts() + 3_600);
     let tx_b = Transaction::new(
         &[&*merchant],
         Message::new(std::slice::from_ref(&to_b), Some(&merchant.pubkey())),
@@ -356,7 +358,7 @@ fn vnext_plan_revision_rejects_delayed_aba_update() {
     );
     litesvm.send_transaction(tx_b).assert_ok();
 
-    let to_a = update_plan_ix(&merchant.pubkey(), plan, registry, 2, 2, "B", "A");
+    let to_a = update_plan_ix(&merchant.pubkey(), plan, registry, 2, 2, "B", "A", current_ts() + 3_600);
     let tx_a = Transaction::new(
         &[&*merchant],
         Message::new(std::slice::from_ref(&to_a), Some(&merchant.pubkey())),
@@ -366,12 +368,62 @@ fn vnext_plan_revision_rejects_delayed_aba_update() {
 
     litesvm.send_transaction(stale_signed).assert_err(SubscriptionsError::StalePlanRevision);
 
+    // Re-sign the same obsolete approval with a fresh blockhash. It must still
+    // fail because the persistent Plan revision/nonce advanced through A -> B -> A.
+    litesvm.expire_blockhash();
+    let replay_signed = Transaction::new(
+        &[&*merchant],
+        Message::new(std::slice::from_ref(&stale), Some(&merchant.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(replay_signed).assert_err(SubscriptionsError::StalePlanRevision);
+
     let account = litesvm.get_account(&registry).unwrap();
     let state = PlanRevisionRegistry::load(&account.data).unwrap();
     let revision = state.revision;
     let nonce = state.action_nonce;
     assert_eq!(revision, 3);
     assert_eq!(nonce, 3);
+}
+
+#[test]
+fn vnext_plan_update_rejects_an_expired_delayed_signature() {
+    let (litesvm, merchant) = &mut setup();
+    let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, None, &[]);
+    let (create, plan, registry) = create_plan_ix(&merchant.pubkey(), mint, 8);
+    build_and_send_transaction(litesvm, &[merchant], &merchant.pubkey(), &create).assert_ok();
+
+    let deadline = current_ts() + 60;
+    let update = update_plan_ix(&merchant.pubkey(), plan, registry, 1, 1, "A", "B", deadline);
+    let signed = Transaction::new(
+        &[&*merchant],
+        Message::new(std::slice::from_ref(&update), Some(&merchant.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+
+    // Keep the transaction's recent blockhash valid while advancing only the
+    // Program's on-chain time beyond the signed authorization deadline.
+    let original_slot = litesvm.get_sysvar::<solana_clock::Clock>().slot;
+    crate::tests::utils::set_clock(litesvm, deadline + 1);
+    assert_eq!(litesvm.get_sysvar::<solana_clock::Clock>().slot, original_slot);
+
+    litesvm.send_transaction(signed).assert_err(SubscriptionsError::AuthorityActionExpired);
+
+    let registry_account = litesvm.get_account(&registry).unwrap();
+    let (revision, nonce) = {
+        let state = PlanRevisionRegistry::load(&registry_account.data).unwrap();
+        (state.revision, state.action_nonce)
+    };
+    assert_eq!(revision, 1);
+    assert_eq!(nonce, 1);
+
+    let plan_account = litesvm.get_account(&plan).unwrap();
+    let (metadata_uri, status) = {
+        let state = VNextPlan::load(&plan_account.data).unwrap();
+        (state.data.metadata_uri, state.status)
+    };
+    assert_eq!(metadata_uri, metadata("A"));
+    assert_eq!(status, PlanStatus::Active as u8);
 }
 
 #[test]
@@ -461,6 +513,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         1,
         1,
         100_000,
+        current_ts() + 3_600,
     );
     let fresh_transfer_signed = Transaction::new(
         &[&merchant],
@@ -468,6 +521,38 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         litesvm.latest_blockhash(),
     );
     litesvm.send_transaction(fresh_transfer_signed).assert_ok();
+    assert_eq!(fetch_account::<TokenAccount>(litesvm, &source).amount, 900_000);
+    assert_eq!(get_ata_balance(litesvm, &destination), 100_000);
+
+    // A validly signed pull must expire at the Program's on-chain deadline even
+    // while its recent blockhash remains valid. No token or period usage changes.
+    let transfer_deadline = current_ts() + 60;
+    let expired_transfer = transfer_ix(
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        source,
+        destination,
+        mint,
+        1,
+        1,
+        100_000,
+        transfer_deadline,
+    );
+    let expired_transfer_signed = Transaction::new(
+        &[&*merchant],
+        Message::new(std::slice::from_ref(&expired_transfer), Some(&merchant.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    let original_slot = litesvm.get_sysvar::<solana_clock::Clock>().slot;
+    crate::tests::utils::set_clock(litesvm, transfer_deadline + 1);
+    assert_eq!(litesvm.get_sysvar::<solana_clock::Clock>().slot, original_slot);
+    litesvm.send_transaction(expired_transfer_signed).assert_err(SubscriptionsError::AuthorityActionExpired);
     assert_eq!(fetch_account::<TokenAccount>(litesvm, &source).amount, 900_000);
     assert_eq!(get_ata_balance(litesvm, &destination), 100_000);
 
@@ -517,6 +602,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         3,
         3,
         200_000,
+        current_ts() + 3_600,
     );
     let stale_transfer_signed = Transaction::new(
         &[&merchant],
@@ -572,6 +658,24 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     // The transfer signature was retained from revision 3. It must remain
     // stale after the same Subscription PDA is reused at revision 5.
     litesvm.send_transaction(stale_transfer_signed).assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
+
+    // A newly signed transaction carrying the same obsolete Subscribe/Transfer
+    // payloads must also fail; a new blockhash cannot reset lifecycle lineage.
+    litesvm.expire_blockhash();
+    let replayed_subscribe = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&stale_subscribe), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(replayed_subscribe)
+        .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
+    let replayed_transfer = Transaction::new(
+        &[&*merchant],
+        Message::new(std::slice::from_ref(&stale_transfer), Some(&merchant.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(replayed_transfer)
+        .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
 
     let lifecycle_account = litesvm.get_account(&lifecycle_registry).unwrap();
     let lifecycle = SubscriptionLifecycleRegistry::load(&lifecycle_account.data).unwrap();

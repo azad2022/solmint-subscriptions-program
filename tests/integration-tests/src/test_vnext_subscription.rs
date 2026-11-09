@@ -17,9 +17,7 @@ use crate::{
     },
     tests::{
         asserts::TransactionResultExt,
-        constants::{
-            MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID,
-        },
+        constants::{MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID},
         utils::{
             build_and_send_transaction, current_ts, fetch_account, get_ata_balance, init_ata, init_aux_token_account,
             init_mint, install_transfer_hook_extra_metas, load_transfer_hook_example, set_transfer_hook_config, setup,
@@ -461,12 +459,7 @@ fn vnext_token_2022_transfer_hook_requires_and_executes_extra_accounts() {
         Some(subscriber.pubkey()),
         &[ExtensionType::TransferHook],
     );
-    set_transfer_hook_config(
-        litesvm,
-        mint,
-        Some(subscriber.pubkey()),
-        Some(TRANSFER_HOOK_EXAMPLE_PROGRAM_ID),
-    );
+    set_transfer_hook_config(litesvm, mint, Some(subscriber.pubkey()), Some(TRANSFER_HOOK_EXAMPLE_PROGRAM_ID));
     let (validation_pda, counter) = install_transfer_hook_extra_metas(litesvm, mint);
 
     let source = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);
@@ -479,23 +472,15 @@ fn vnext_token_2022_transfer_hook_requires_and_executes_extra_accounts() {
     let authority =
         to_pubkey(VNextSubscriptionAuthority::find_pda(&subscriber_address, &mint_address, &source_address).0);
 
-    let authorize = authorize_ix(
-        &subscriber.pubkey(),
-        consent_registry,
-        authority,
-        mint,
-        source,
-        TOKEN_2022_PROGRAM_ID,
-    );
+    let authorize =
+        authorize_ix(&subscriber.pubkey(), consent_registry, authority, mint, source, TOKEN_2022_PROGRAM_ID);
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize).assert_ok();
 
-    let (create, plan, plan_revision_registry) =
-        create_plan_ix(&merchant.pubkey(), mint, 7, TOKEN_2022_PROGRAM_ID);
+    let (create, plan, plan_revision_registry) = create_plan_ix(&merchant.pubkey(), mint, 7, TOKEN_2022_PROGRAM_ID);
     build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &create).assert_ok();
 
     let plan_address = to_address(&plan);
-    let subscription =
-        to_pubkey(VNextSubscription::find_pda(&plan_address, &subscriber_address, &source_address).0);
+    let subscription = to_pubkey(VNextSubscription::find_pda(&plan_address, &subscriber_address, &source_address).0);
     let lifecycle_registry =
         to_pubkey(SubscriptionLifecycleRegistry::find_pda(&plan_address, &subscriber_address, &source_address).0);
     let plan_bump = VNextPlan::find_pda(&to_address(&merchant.pubkey()), 7).1;
@@ -541,8 +526,7 @@ fn vnext_token_2022_transfer_hook_requires_and_executes_extra_accounts() {
         current_ts() + 3_600,
         TOKEN_2022_PROGRAM_ID,
     );
-    let missing_result =
-        build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &missing_hook_accounts);
+    let missing_result = build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &missing_hook_accounts);
     assert!(missing_result.is_err(), "VNext TransferHook transfer without extra accounts must fail");
     assert_eq!(fetch_account::<TokenAccount>(litesvm, &source).amount, 1_000_000);
     assert_eq!(get_ata_balance(litesvm, &destination), 0);

@@ -19,11 +19,11 @@ use crate::{
         asserts::TransactionResultExt,
         constants::{
             MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID,
-            TRANSFER_HOOK_EXAMPLE_PROGRAM_ID,
         },
         utils::{
             build_and_send_transaction, current_ts, fetch_account, get_ata_balance, init_ata, init_aux_token_account,
             init_mint, install_transfer_hook_extra_metas, load_transfer_hook_example, set_transfer_hook_config, setup,
+            TRANSFER_HOOK_EXAMPLE_PROGRAM_ID,
         },
     },
     SubscriptionsError,

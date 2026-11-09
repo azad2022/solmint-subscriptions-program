@@ -375,11 +375,12 @@ The current additive VNext instruction assignments are:
 | CancelSubscriptionVNext | 23 | RevisionActionData, 24 bytes |
 | CancelSubscriptionNowVNext | 24 | RevisionActionData, 24 bytes |
 | ResumeSubscriptionVNext | 25 | RevisionActionData, 24 bytes |
-| TransferSubscriptionVNext | 26 | VNextTransferData, 120 bytes |
+| TransferSubscriptionVNext (v1, deprecated/fail-closed) | 26 | VNextTransferData, 120 bytes |
+| TransferSubscriptionVNextV2 | 27 | VNextTransferV2Data, 136 bytes |
 
-The existing instruction discriminators 0–17 remain unchanged. The current Rust enum and Codama annotations define account order and signer/writable flags. TransferHook remaining accounts are forwarded through the existing Token-2022 helper. These assignments are implemented and the Codama IDL has been regenerated and committed at source checkpoint aa6f7c0. Structural equality against the exact-source Codama output passed in run 42271881452 (27 instructions, 12 accounts, 19 defined types, 12 PDAs); golden byte/account-meta tests and independent review remain required.
+The existing instruction discriminators 0–17 remain unchanged. The current Rust enum and Codama annotations define account order and signer/writable flags. TransferHook remaining accounts are forwarded through the existing Token-2022 helper. Discriminator 26 remains parseable for ABI compatibility but its handler always returns `LegacyVNextTransferDisabled`; it cannot move tokens because its payload does not bind period consumption. New clients must use discriminator 27.
 
-`VNextTransferData` v1 is exactly 120 bytes, little-endian/packed:
+`VNextTransferData` v1 remains exactly 120 bytes, little-endian/packed, and is frozen. It is retained only for deterministic decoding and fail-closed compatibility; it is not a supported transfer path:
 
 | Offset | Length | Field | Encoding |
 |---:|---:|---|---|
@@ -393,7 +394,25 @@ The existing instruction discriminators 0–17 remain unchanged. The current Rus
 | 104 | 8 | expected_authority_generation | u64 |
 | 112 | 8 | not_after_ts | i64 |
 
-The Program validates all snapshot values and the 24-hour deadline before token movement. No discriminator or payload should be renumbered or resized after SDK generation without an explicit versioned ABI migration.
+`VNextTransferV2Data` is an additive 136-byte payload. The first 72 bytes retain the v1 amount/delegator/mint prefix; two period-state snapshot fields are added before the Plan/lifecycle/Authority revisions:
+
+| Offset | Length | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 8 | amount | u64 |
+| 8 | 32 | delegator | public key |
+| 40 | 32 | mint | public key |
+| 72 | 8 | expected_period_start_ts | i64 |
+| 80 | 8 | expected_amount_pulled_in_period | u64 |
+| 88 | 8 | expected_plan_revision | u64 |
+| 96 | 8 | expected_plan_nonce | u64 |
+| 104 | 8 | expected_lifecycle_revision | u64 |
+| 112 | 8 | expected_lifecycle_nonce | u64 |
+| 120 | 8 | expected_authority_generation | u64 |
+| 128 | 8 | not_after_ts | i64 |
+
+Before token movement, the Program projects the effective period snapshot at the current on-chain timestamp (including an elapsed-period rollover without mutating state), then requires exact equality with the signed period-start and cumulative-amount values. A successful pull changes this state; re-signing the same payload with a fresh recent blockhash therefore fails with `StaleSubscriptionTransferSnapshot`. A transaction whose CPI fails rolls back both the token movement and period state atomically. The Plan/lifecycle/Authority revision checks and 24-hour deadline remain mandatory.
+
+This does not replace Backend Billing Attempt idempotency, transaction reconciliation, or accounting uniqueness. Those remain independent gates. No discriminator or payload may be resized in place after SDK generation; any future change requires another explicit versioned ABI migration.
 
 ### 8.3 IDL, Rust and TypeScript client contract
 

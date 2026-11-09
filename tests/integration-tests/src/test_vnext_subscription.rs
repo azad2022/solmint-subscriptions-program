@@ -9,7 +9,7 @@ use crate::{
     instructions::{
         create_plan::{PlanData, PlanTerms},
         vnext_plan::{VNextCreatePlanData, VNextPlanUpdateData},
-        vnext_subscription::{RevisionActionData, VNextSubscribeData, VNextTransferData},
+        vnext_subscription::{RevisionActionData, VNextSubscribeData, VNextTransferV2Data},
     },
     state::{
         common::PlanStatus, AuthorityConsentRegistry, PlanRevisionRegistry, SubscriptionLifecycleRegistry, VNextPlan,
@@ -318,13 +318,17 @@ fn transfer_ix(
     lifecycle_revision: u64,
     lifecycle_nonce: u64,
     amount: u64,
+    expected_period_start_ts: i64,
+    expected_amount_pulled_in_period: u64,
     not_after_ts: i64,
     token_program: Pubkey,
 ) -> Instruction {
-    let data = VNextTransferData {
+    let data = VNextTransferV2Data {
         amount,
         delegator: to_address(subscriber),
         mint: to_address(&mint),
+        expected_period_start_ts,
+        expected_amount_pulled_in_period,
         expected_plan_revision: 1,
         expected_plan_nonce: 1,
         expected_lifecycle_revision: lifecycle_revision,
@@ -333,7 +337,7 @@ fn transfer_ix(
         not_after_ts,
     };
     instruction(
-        26,
+        27,
         &payload_bytes(&data),
         vec![
             AccountMeta::new(subscription, false),
@@ -532,6 +536,8 @@ fn vnext_token_2022_transfer_hook_requires_and_executes_extra_accounts() {
         1,
         1,
         100_000,
+        created_at,
+        0,
         current_ts() + 3_600,
         TOKEN_2022_PROGRAM_ID,
     );
@@ -556,6 +562,8 @@ fn vnext_token_2022_transfer_hook_requires_and_executes_extra_accounts() {
         1,
         1,
         100_000,
+        created_at,
+        0,
         current_ts() + 3_600,
         TOKEN_2022_PROGRAM_ID,
     );
@@ -660,6 +668,8 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         1,
         1,
         100_000,
+        created_at,
+        0,
         current_ts() + 3_600,
         TOKEN_PROGRAM_ID,
     );
@@ -669,6 +679,19 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         litesvm.latest_blockhash(),
     );
     litesvm.send_transaction(fresh_transfer_signed).assert_ok();
+    assert_eq!(fetch_account::<TokenAccount>(litesvm, &source).amount, 900_000);
+    assert_eq!(get_ata_balance(litesvm, &destination), 100_000);
+
+    // The exact same transfer payload, re-signed with a fresh blockhash, must
+    // not consume the same billing-period allowance a second time.
+    litesvm.expire_blockhash();
+    let replayed_transfer = Transaction::new(
+        &[&*merchant],
+        Message::new(std::slice::from_ref(&fresh_transfer), Some(&merchant.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(replayed_transfer)
+        .assert_err(SubscriptionsError::StaleSubscriptionTransferSnapshot);
     assert_eq!(fetch_account::<TokenAccount>(litesvm, &source).amount, 900_000);
     assert_eq!(get_ata_balance(litesvm, &destination), 100_000);
 
@@ -689,6 +712,8 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         mint,
         1,
         1,
+        100_000,
+        created_at,
         100_000,
         transfer_deadline,
         TOKEN_PROGRAM_ID,
@@ -751,6 +776,8 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         3,
         3,
         200_000,
+        created_at,
+        100_000,
         current_ts() + 3_600,
         TOKEN_PROGRAM_ID,
     );

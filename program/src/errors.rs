@@ -70,6 +70,8 @@ impl TryFrom<u32> for SubscriptionsError {
             152 => Ok(Self::VNextAuthorityIdentityMismatch),
             153 => Ok(Self::NonAssociatedSourceAccountRequired),
             154 => Ok(Self::ForeignTokenDelegatePresent),
+            155 => Ok(Self::LegacyVNextTransferDisabled),
+            156 => Ok(Self::StaleSubscriptionTransferSnapshot),
             // Fixed delegation errors (300-399)
             300 => Ok(Self::AmountExceedsLimit),
             301 => Ok(Self::FixedDelegationExpiryInPast),
@@ -257,6 +259,10 @@ pub enum SubscriptionsError {
     NonAssociatedSourceAccountRequired,
     #[error("Source token account already has a different token delegate")]
     ForeignTokenDelegatePresent,
+    #[error("Legacy VNext Transfer v1 is disabled because it does not bind the current billing-period snapshot")]
+    LegacyVNextTransferDisabled = 155,
+    #[error("Subscription transfer billing-period snapshot is stale or already consumed")]
+    StaleSubscriptionTransferSnapshot = 156,
 
     // --- Fixed delegation errors (300--399) ---
     #[error("Transfer amount exceeds delegation limit")]

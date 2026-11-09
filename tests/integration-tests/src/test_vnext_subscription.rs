@@ -3,7 +3,7 @@ use solana_message::Message;
 use solana_pubkey::Pubkey;
 use solana_signer::Signer;
 use solana_transaction::Transaction;
-use spl_token_2022_interface::state::Account as TokenAccount;
+use spl_token_2022_interface::{extension::ExtensionType, state::Account as TokenAccount};
 
 use crate::{
     instructions::{
@@ -17,10 +17,13 @@ use crate::{
     },
     tests::{
         asserts::TransactionResultExt,
-        constants::{MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID, TOKEN_PROGRAM_ID},
+        constants::{
+            MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID,
+            TRANSFER_HOOK_EXAMPLE_PROGRAM_ID,
+        },
         utils::{
             build_and_send_transaction, current_ts, fetch_account, get_ata_balance, init_ata, init_aux_token_account,
-            init_mint, setup,
+            init_mint, install_transfer_hook_extra_metas, load_transfer_hook_example, set_transfer_hook_config, setup,
         },
     },
     SubscriptionsError,
@@ -55,7 +58,12 @@ fn metadata(value: &str) -> [u8; 128] {
     result
 }
 
-fn create_plan_ix(merchant: &Pubkey, mint: Pubkey, plan_id: u64) -> (Instruction, Pubkey, Pubkey) {
+fn create_plan_ix(
+    merchant: &Pubkey,
+    mint: Pubkey,
+    plan_id: u64,
+    token_program: Pubkey,
+) -> (Instruction, Pubkey, Pubkey) {
     let merchant_address = to_address(merchant);
     let mint_address = to_address(&mint);
     let (plan, _) = VNextPlan::find_pda(&merchant_address, plan_id);
@@ -86,7 +94,7 @@ fn create_plan_ix(merchant: &Pubkey, mint: Pubkey, plan_id: u64) -> (Instruction
             AccountMeta::new(to_pubkey(registry), false),
             AccountMeta::new_readonly(mint, false),
             AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
-            AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+            AccountMeta::new_readonly(token_program, false),
         ],
     );
     (ix, to_pubkey(plan), to_pubkey(registry))
@@ -126,7 +134,14 @@ fn update_plan_ix(
     )
 }
 
-fn authorize_ix(subscriber: &Pubkey, registry: Pubkey, authority: Pubkey, mint: Pubkey, source: Pubkey) -> Instruction {
+fn authorize_ix(
+    subscriber: &Pubkey,
+    registry: Pubkey,
+    authority: Pubkey,
+    mint: Pubkey,
+    source: Pubkey,
+    token_program: Pubkey,
+) -> Instruction {
     let mut data = vec![18];
     data.extend_from_slice(&0u64.to_le_bytes()); // expected generation
     data.extend_from_slice(&0u64.to_le_bytes()); // authorize nonce
@@ -141,7 +156,7 @@ fn authorize_ix(subscriber: &Pubkey, registry: Pubkey, authority: Pubkey, mint: 
             AccountMeta::new_readonly(mint, false),
             AccountMeta::new(source, false),
             AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
-            AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+            AccountMeta::new_readonly(token_program, false),
         ],
     )
 }
@@ -161,6 +176,7 @@ fn subscribe_ix(
     created_at: i64,
     lifecycle_revision: u64,
     lifecycle_nonce: u64,
+    token_program: Pubkey,
 ) -> Instruction {
     let data = VNextSubscribeData {
         plan_id: 7,
@@ -191,7 +207,7 @@ fn subscribe_ix(
             AccountMeta::new_readonly(mint, false),
             AccountMeta::new(source, false),
             AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
-            AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+            AccountMeta::new_readonly(token_program, false),
             AccountMeta::new_readonly(event_authority(), false),
             AccountMeta::new_readonly(PROGRAM_ID, false),
         ],
@@ -303,6 +319,7 @@ fn transfer_ix(
     lifecycle_nonce: u64,
     amount: u64,
     not_after_ts: i64,
+    token_program: Pubkey,
 ) -> Instruction {
     let data = VNextTransferData {
         amount,
@@ -329,7 +346,7 @@ fn transfer_ix(
             AccountMeta::new(destination, false),
             AccountMeta::new_readonly(*merchant, true),
             AccountMeta::new_readonly(mint, false),
-            AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+            AccountMeta::new_readonly(token_program, false),
             AccountMeta::new_readonly(event_authority(), false),
             AccountMeta::new_readonly(PROGRAM_ID, false),
         ],
@@ -340,7 +357,7 @@ fn transfer_ix(
 fn vnext_plan_revision_rejects_delayed_aba_update() {
     let (litesvm, merchant) = &mut setup();
     let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, None, &[]);
-    let (create, plan, registry) = create_plan_ix(&merchant.pubkey(), mint, 7);
+    let (create, plan, registry) = create_plan_ix(&merchant.pubkey(), mint, 7, TOKEN_PROGRAM_ID);
     build_and_send_transaction(litesvm, &[merchant], &merchant.pubkey(), &create).assert_ok();
 
     let stale = update_plan_ix(&merchant.pubkey(), plan, registry, 1, 1, "A", "C", current_ts() + 3_600);
@@ -390,7 +407,7 @@ fn vnext_plan_revision_rejects_delayed_aba_update() {
 fn vnext_plan_update_rejects_an_expired_delayed_signature() {
     let (litesvm, merchant) = &mut setup();
     let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, None, &[]);
-    let (create, plan, registry) = create_plan_ix(&merchant.pubkey(), mint, 8);
+    let (create, plan, registry) = create_plan_ix(&merchant.pubkey(), mint, 8, TOKEN_PROGRAM_ID);
     build_and_send_transaction(litesvm, &[merchant], &merchant.pubkey(), &create).assert_ok();
 
     let deadline = current_ts() + 60;
@@ -427,6 +444,134 @@ fn vnext_plan_update_rejects_an_expired_delayed_signature() {
 }
 
 #[test]
+fn vnext_token_2022_transfer_hook_requires_and_executes_extra_accounts() {
+    let (litesvm, subscriber) = &mut setup();
+    load_transfer_hook_example(litesvm);
+    let merchant = crate::tests::utils::init_wallet(litesvm, 10_000_000_000);
+
+    let mint = init_mint(
+        litesvm,
+        TOKEN_2022_PROGRAM_ID,
+        MINT_DECIMALS,
+        1_000_000_000,
+        Some(subscriber.pubkey()),
+        &[ExtensionType::TransferHook],
+    );
+    set_transfer_hook_config(
+        litesvm,
+        mint,
+        Some(subscriber.pubkey()),
+        Some(TRANSFER_HOOK_EXAMPLE_PROGRAM_ID),
+    );
+    let (validation_pda, counter) = install_transfer_hook_extra_metas(litesvm, mint);
+
+    let source = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);
+    let destination = init_ata(litesvm, mint, merchant.pubkey(), 0);
+    let subscriber_address = to_address(&subscriber.pubkey());
+    let mint_address = to_address(&mint);
+    let source_address = to_address(&source);
+    let consent_registry =
+        to_pubkey(AuthorityConsentRegistry::find_pda(&subscriber_address, &mint_address, &source_address).0);
+    let authority =
+        to_pubkey(VNextSubscriptionAuthority::find_pda(&subscriber_address, &mint_address, &source_address).0);
+
+    let authorize = authorize_ix(
+        &subscriber.pubkey(),
+        consent_registry,
+        authority,
+        mint,
+        source,
+        TOKEN_2022_PROGRAM_ID,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize).assert_ok();
+
+    let (create, plan, plan_revision_registry) =
+        create_plan_ix(&merchant.pubkey(), mint, 7, TOKEN_2022_PROGRAM_ID);
+    build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &create).assert_ok();
+
+    let plan_address = to_address(&plan);
+    let subscription =
+        to_pubkey(VNextSubscription::find_pda(&plan_address, &subscriber_address, &source_address).0);
+    let lifecycle_registry =
+        to_pubkey(SubscriptionLifecycleRegistry::find_pda(&plan_address, &subscriber_address, &source_address).0);
+    let plan_bump = VNextPlan::find_pda(&to_address(&merchant.pubkey()), 7).1;
+    let plan_account = litesvm.get_account(&plan).unwrap();
+    let created_at = VNextPlan::load(&plan_account.data).unwrap().data.terms.created_at;
+
+    let subscribe = subscribe_ix(
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        mint,
+        source,
+        plan_bump,
+        created_at,
+        0,
+        0,
+        TOKEN_2022_PROGRAM_ID,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &subscribe).assert_ok();
+
+    let missing_hook_accounts = transfer_ix(
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        source,
+        destination,
+        mint,
+        1,
+        1,
+        100_000,
+        current_ts() + 3_600,
+        TOKEN_2022_PROGRAM_ID,
+    );
+    let missing_result =
+        build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &missing_hook_accounts);
+    assert!(missing_result.is_err(), "VNext TransferHook transfer without extra accounts must fail");
+    assert_eq!(fetch_account::<TokenAccount>(litesvm, &source).amount, 1_000_000);
+    assert_eq!(get_ata_balance(litesvm, &destination), 0);
+
+    let mut hooked_transfer = transfer_ix(
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        source,
+        destination,
+        mint,
+        1,
+        1,
+        100_000,
+        current_ts() + 3_600,
+        TOKEN_2022_PROGRAM_ID,
+    );
+    hooked_transfer.accounts.extend([
+        AccountMeta::new_readonly(TRANSFER_HOOK_EXAMPLE_PROGRAM_ID, false),
+        AccountMeta::new_readonly(validation_pda, false),
+        AccountMeta::new(counter, false),
+    ]);
+    build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &hooked_transfer).assert_ok();
+
+    assert_eq!(fetch_account::<TokenAccount>(litesvm, &source).amount, 900_000);
+    assert_eq!(get_ata_balance(litesvm, &destination), 100_000);
+    assert_eq!(litesvm.get_account(&counter).unwrap().data[0], 1, "VNext transfer hook must execute once");
+}
+
+#[test]
 fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     let (litesvm, subscriber) = &mut setup();
     let merchant = crate::tests::utils::init_wallet(litesvm, 10_000_000_000);
@@ -441,10 +586,10 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         to_pubkey(AuthorityConsentRegistry::find_pda(&subscriber_address, &mint_address, &source_address).0);
     let authority =
         to_pubkey(VNextSubscriptionAuthority::find_pda(&subscriber_address, &mint_address, &source_address).0);
-    let authorize = authorize_ix(&subscriber.pubkey(), consent_registry, authority, mint, source);
+    let authorize = authorize_ix(&subscriber.pubkey(), consent_registry, authority, mint, source, TOKEN_PROGRAM_ID);
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize).assert_ok();
 
-    let (create, plan, plan_revision_registry) = create_plan_ix(&merchant.pubkey(), mint, 7);
+    let (create, plan, plan_revision_registry) = create_plan_ix(&merchant.pubkey(), mint, 7, TOKEN_PROGRAM_ID);
     build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &create).assert_ok();
 
     let plan_address = to_address(&plan);
@@ -471,6 +616,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         created_at,
         0,
         0,
+        TOKEN_PROGRAM_ID,
     );
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &subscribe).assert_ok();
 
@@ -491,6 +637,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         created_at,
         1,
         1,
+        TOKEN_PROGRAM_ID,
     );
     let stale_subscribe_signed = Transaction::new(
         &[&*subscriber],
@@ -514,6 +661,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         1,
         100_000,
         current_ts() + 3_600,
+        TOKEN_PROGRAM_ID,
     );
     let fresh_transfer_signed = Transaction::new(
         &[&merchant],
@@ -543,6 +691,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         1,
         100_000,
         transfer_deadline,
+        TOKEN_PROGRAM_ID,
     );
     let expired_transfer_signed = Transaction::new(
         &[&*merchant],
@@ -603,6 +752,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         3,
         200_000,
         current_ts() + 3_600,
+        TOKEN_PROGRAM_ID,
     );
     let stale_transfer_signed = Transaction::new(
         &[&merchant],
@@ -647,6 +797,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         created_at,
         4,
         4,
+        TOKEN_PROGRAM_ID,
     );
     let resubscribe_signed = Transaction::new(
         &[&*subscriber],

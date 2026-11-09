@@ -110,9 +110,87 @@ impl VNextTransferData {
     }
 }
 
+/// Version 2 binds a signed transfer to the effective cumulative period state.
+/// Re-signing the same transfer payload with a fresh blockhash cannot consume
+/// the same allowance twice because the expected period snapshot is one-use.
+#[repr(C, packed)]
+#[derive(CodamaType, Debug, Clone)]
+pub struct VNextTransferV2Data {
+    pub amount: u64,
+    pub delegator: Address,
+    pub mint: Address,
+    pub expected_period_start_ts: i64,
+    pub expected_amount_pulled_in_period: u64,
+    pub expected_plan_revision: u64,
+    pub expected_plan_nonce: u64,
+    pub expected_lifecycle_revision: u64,
+    pub expected_lifecycle_nonce: u64,
+    pub expected_authority_generation: u64,
+    pub not_after_ts: i64,
+}
+
+impl VNextTransferV2Data {
+    pub const LEN: usize = size_of::<Self>();
+
+    pub fn load(data: &[u8]) -> Result<&Self, ProgramError> {
+        if data.len() != Self::LEN {
+            return Err(SubscriptionsError::InvalidInstructionData.into());
+        }
+        Ok(unsafe { &*transmute::<*const u8, *const Self>(data.as_ptr()) })
+    }
+}
+
 /// Enforces signed-transfer freshness against the live monotonic state.
+/// Projects the current cumulative period state to the effective period
+/// at the supplied on-chain timestamp. This mirrors the non-expiring VNext
+/// recurring-period rollover rules without mutating account state.
+fn project_current_period_snapshot(
+    current_period_start_ts: i64,
+    amount_pulled_in_period: u64,
+    period_length_s: u64,
+    now: i64,
+) -> Result<(i64, u64), ProgramError> {
+    let period_length = i64::try_from(period_length_s).map_err(|_| SubscriptionsError::InvalidPeriodLength)?;
+    if period_length == 0 {
+        return Err(SubscriptionsError::InvalidPeriodLength.into());
+    }
+    if now < current_period_start_ts {
+        return Err(SubscriptionsError::DelegationNotStarted.into());
+    }
+
+    let elapsed = now.saturating_sub(current_period_start_ts);
+    if elapsed < period_length {
+        return Ok((current_period_start_ts, amount_pulled_in_period));
+    }
+
+    let periods_passed = elapsed.checked_div(period_length).ok_or(SubscriptionsError::InvalidPeriodLength)?;
+    let increment = periods_passed.checked_mul(period_length).ok_or(SubscriptionsError::ArithmeticOverflow)?;
+    let effective_start =
+        current_period_start_ts.checked_add(increment).ok_or(SubscriptionsError::ArithmeticOverflow)?;
+    Ok((effective_start, 0))
+}
+
+/// Rejects an intent whose signed period snapshot has already been consumed
+/// or whose period rolled forward since the transaction was prepared.
+fn validate_transfer_period_snapshot(
+    data: &VNextTransferV2Data,
+    current_period_start_ts: i64,
+    amount_pulled_in_period: u64,
+    period_length_s: u64,
+    now: i64,
+) -> Result<(i64, u64), ProgramError> {
+    let (effective_start, effective_amount) =
+        project_current_period_snapshot(current_period_start_ts, amount_pulled_in_period, period_length_s, now)?;
+    if data.expected_period_start_ts != effective_start
+        || data.expected_amount_pulled_in_period != effective_amount
+    {
+        return Err(SubscriptionsError::StaleSubscriptionTransferSnapshot.into());
+    }
+    Ok((effective_start, effective_amount))
+}
+
 fn validate_transfer_freshness(
-    data: &VNextTransferData,
+    data: &VNextTransferV2Data,
     now: i64,
     plan_revision: u64,
     plan_nonce: u64,
@@ -714,7 +792,13 @@ pub fn process_resume(accounts: &mut [AccountView], data: &RevisionActionData) -
 
 /// Every VNext pull revalidates the permanent Plan/Subscription revisions,
 /// consent generation, Authority tuple, source delegate, caller, and destination.
-pub fn process_transfer(accounts: &mut [AccountView], transfer_data: &VNextTransferData) -> ProgramResult {
+/// V1 transfer payloads lack a signed cumulative-period snapshot. They are
+/// deliberately fail-closed; callers must use discriminator 27 and V2 data.
+pub fn process_transfer(_accounts: &mut [AccountView], _transfer_data: &VNextTransferData) -> ProgramResult {
+    Err(SubscriptionsError::LegacyVNextTransferDisabled.into())
+}
+
+pub fn process_transfer_v2(accounts: &mut [AccountView], transfer_data: &VNextTransferV2Data) -> ProgramResult {
     let [subscription_account, plan_account, plan_revision_account, lifecycle_registry_account, consent_account, authority_account, source, destination, caller, mint, token_program, event_authority, self_program, remaining @ ..] =
         accounts
     else {
@@ -835,6 +919,13 @@ pub fn process_transfer(accounts: &mut [AccountView], transfer_data: &VNextTrans
     }
 
     let period_length = terms.period_length_secs()?;
+    (period_start, amount_pulled) = validate_transfer_period_snapshot(
+        transfer_data,
+        period_start,
+        amount_pulled,
+        period_length,
+        now,
+    )?;
     validate_recurring_transfer(
         transfer_data.amount,
         terms.amount,
@@ -888,11 +979,13 @@ pub fn process_transfer(accounts: &mut [AccountView], transfer_data: &VNextTrans
 mod transfer_freshness_tests {
     use super::*;
 
-    fn payload() -> VNextTransferData {
-        VNextTransferData {
+    fn payload() -> VNextTransferV2Data {
+        VNextTransferV2Data {
             amount: 1,
             delegator: Address::from([1; 32]),
             mint: Address::from([2; 32]),
+            expected_period_start_ts: 100,
+            expected_amount_pulled_in_period: 25,
             expected_plan_revision: 4,
             expected_plan_nonce: 7,
             expected_lifecycle_revision: 9,
@@ -921,6 +1014,48 @@ mod transfer_freshness_tests {
         assert_eq!(core::mem::offset_of!(VNextTransferData, expected_lifecycle_nonce), 96);
         assert_eq!(core::mem::offset_of!(VNextTransferData, expected_authority_generation), 104);
         assert_eq!(core::mem::offset_of!(VNextTransferData, not_after_ts), 112);
+    }
+
+    #[test]
+    fn v1_transfer_payload_layout_remains_frozen_and_v2_is_additive() {
+        assert_eq!(VNextTransferData::LEN, 120);
+        assert_eq!(VNextTransferV2Data::LEN, 136);
+        assert_eq!(core::mem::offset_of!(VNextTransferV2Data, amount), 0);
+        assert_eq!(core::mem::offset_of!(VNextTransferV2Data, delegator), 8);
+        assert_eq!(core::mem::offset_of!(VNextTransferV2Data, mint), 40);
+        assert_eq!(core::mem::offset_of!(VNextTransferV2Data, expected_period_start_ts), 72);
+        assert_eq!(core::mem::offset_of!(VNextTransferV2Data, expected_amount_pulled_in_period), 80);
+        assert_eq!(core::mem::offset_of!(VNextTransferV2Data, expected_plan_revision), 88);
+        assert_eq!(core::mem::offset_of!(VNextTransferV2Data, expected_plan_nonce), 96);
+        assert_eq!(core::mem::offset_of!(VNextTransferV2Data, expected_lifecycle_revision), 104);
+        assert_eq!(core::mem::offset_of!(VNextTransferV2Data, expected_lifecycle_nonce), 112);
+        assert_eq!(core::mem::offset_of!(VNextTransferV2Data, expected_authority_generation), 120);
+        assert_eq!(core::mem::offset_of!(VNextTransferV2Data, not_after_ts), 128);
+    }
+
+    #[test]
+    fn transfer_snapshot_rejects_replay_after_amount_was_consumed() {
+        let data = payload();
+        assert_custom_error(
+            validate_transfer_period_snapshot(&data, 100, 26, 3_600, 110).map(|_| ()),
+            SubscriptionsError::StaleSubscriptionTransferSnapshot,
+        );
+    }
+
+    #[test]
+    fn transfer_snapshot_rejects_replay_after_period_rollover() {
+        let data = payload();
+        assert_custom_error(
+            validate_transfer_period_snapshot(&data, 100, 25, 3_600, 3_700).map(|_| ()),
+            SubscriptionsError::StaleSubscriptionTransferSnapshot,
+        );
+    }
+
+    #[test]
+    fn transfer_snapshot_accepts_the_current_effective_period() {
+        let data = payload();
+        assert_eq!(validate_transfer_period_snapshot(&data, 100, 25, 3_600, 110).unwrap(), (100, 25));
+        assert_eq!(validate_transfer_period_snapshot(&data, 100, 25, 3_600, 3_700).unwrap(), (3_700, 0));
     }
 
     #[test]

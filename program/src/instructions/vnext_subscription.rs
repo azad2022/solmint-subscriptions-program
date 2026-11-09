@@ -182,9 +182,7 @@ fn validate_transfer_period_snapshot(
 ) -> Result<(i64, u64), ProgramError> {
     let (effective_start, effective_amount) =
         project_current_period_snapshot(current_period_start_ts, amount_pulled_in_period, period_length_s, now)?;
-    if data.expected_period_start_ts != effective_start
-        || data.expected_amount_pulled_in_period != effective_amount
-    {
+    if data.expected_period_start_ts != effective_start || data.expected_amount_pulled_in_period != effective_amount {
         return Err(SubscriptionsError::StaleSubscriptionTransferSnapshot.into());
     }
     Ok((effective_start, effective_amount))
@@ -920,13 +918,8 @@ pub fn process_transfer_v2(accounts: &mut [AccountView], transfer_data: &VNextTr
     }
 
     let period_length = terms.period_length_secs()?;
-    (period_start, amount_pulled) = validate_transfer_period_snapshot(
-        transfer_data,
-        period_start,
-        amount_pulled,
-        period_length,
-        now,
-    )?;
+    (period_start, amount_pulled) =
+        validate_transfer_period_snapshot(transfer_data, period_start, amount_pulled, period_length, now)?;
     validate_recurring_transfer(
         transfer_data.amount,
         terms.amount,

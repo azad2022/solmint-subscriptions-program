@@ -235,16 +235,7 @@ fn vnext_authorize_rejects_a_signed_action_after_its_onchain_deadline() {
     let (registry, authority) = derive_vnext_accounts(&subscriber.pubkey(), &mint, &source);
 
     let deadline = crate::tests::utils::current_ts() + 60;
-    let authorize = authorize_ix(
-        &subscriber.pubkey(),
-        registry,
-        authority,
-        mint,
-        source,
-        0,
-        0,
-        deadline,
-    );
+    let authorize = authorize_ix(&subscriber.pubkey(), registry, authority, mint, source, 0, 0, deadline);
     let signed = Transaction::new(
         &[&*subscriber],
         Message::new(std::slice::from_ref(&authorize), Some(&subscriber.pubkey())),

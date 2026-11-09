@@ -48,7 +48,7 @@ use crate::instructions::update_plan::UpdatePlanData;
 use crate::SubscriptionsError;
 pub use authority_consent::AuthorityActionData;
 pub use vnext_plan::{VNextCreatePlanData, VNextPlanUpdateData};
-pub use vnext_subscription::{RevisionActionData, VNextSubscribeData, VNextTransferData};
+pub use vnext_subscription::{RevisionActionData, VNextSubscribeData, VNextTransferData, VNextTransferV2Data};
 
 /// All instructions supported by the subscriptions program.
 ///
@@ -573,6 +573,21 @@ pub enum SubscriptionsInstruction {
     #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
     TransferSubscriptionVNext(#[codama(name = "transfer_data")] VNextTransferData) = 26,
 
+    #[codama(account(name = "subscription_pda", writable, docs = "VNext Subscription state"))]
+    #[codama(account(name = "plan_pda", docs = "VNext Plan"))]
+    #[codama(account(name = "plan_revision_registry", docs = "Current Plan revision lineage"))]
+    #[codama(account(name = "lifecycle_registry", docs = "Current Subscription lifecycle lineage"))]
+    #[codama(account(name = "consent_registry", docs = "Active Authority Consent Registry"))]
+    #[codama(account(name = "authority", docs = "VNext token delegate Authority"))]
+    #[codama(account(name = "source_token_account", writable, docs = "Exact source token account"))]
+    #[codama(account(name = "destination_token_account", writable, docs = "Allowed destination token account"))]
+    #[codama(account(name = "caller", signer, docs = "Plan owner or an authorized puller"))]
+    #[codama(account(name = "token_mint", docs = "Subscription token mint"))]
+    #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
+    #[codama(account(name = "event_authority", docs = "Event authority PDA", default_value = pda("eventAuthority")))]
+    #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
+    TransferSubscriptionVNextV2(#[codama(name = "transfer_data")] VNextTransferV2Data) = 27,
+
     #[codama(skip)]
     #[codama(account(
         name = "event_authority",
@@ -672,6 +687,10 @@ impl SubscriptionsInstruction {
                 let loaded = VNextTransferData::load(rest)?;
                 Ok(Self::TransferSubscriptionVNext(loaded.clone()))
             }
+            vnext_subscription::TRANSFER_V2_DISCRIMINATOR => {
+                let loaded = VNextTransferV2Data::load(rest)?;
+                Ok(Self::TransferSubscriptionVNextV2(loaded.clone()))
+            }
             revoke_abandoned_delegation::DISCRIMINATOR => Ok(Self::RevokeAbandonedDelegation),
             revoke_abandoned_subscription::DISCRIMINATOR => Ok(Self::RevokeAbandonedSubscription),
             &EMIT_EVENT_IX_DISC => Ok(Self::EmitEvent),
@@ -707,7 +726,8 @@ impl fmt::Display for SubscriptionsInstruction {
             Self::CancelSubscriptionVNext(_) => write!(f, "cancel_subscription_vnext"),
             Self::CancelSubscriptionNowVNext(_) => write!(f, "cancel_subscription_now_vnext"),
             Self::ResumeSubscriptionVNext(_) => write!(f, "resume_subscription_vnext"),
-            Self::TransferSubscriptionVNext(_) => write!(f, "transfer_subscription_vnext"),
+            Self::TransferSubscriptionVNext(_) => write!(f, "transfer_subscription_vnext_v1_disabled"),
+            Self::TransferSubscriptionVNextV2(_) => write!(f, "transfer_subscription_vnext_v2"),
             Self::RevokeAbandonedDelegation => write!(f, "revoke_abandoned_delegation"),
             Self::RevokeAbandonedSubscription => write!(f, "revoke_abandoned_subscription"),
             Self::EmitEvent => write!(f, "emit_event"),

@@ -212,9 +212,58 @@ fn vnext_revoke_tombstone_preempts_unsubmitted_authorization() {
     // invalidation. It must fail on the persistent generation tombstone.
     litesvm.send_transaction(stale_signed).assert_err(SubscriptionsError::StaleAuthorityGeneration);
 
+    // Re-sign the same stale instruction with a fresh recent blockhash. This
+    // rules out blockhash expiry as the reason the replay is rejected.
+    litesvm.expire_blockhash();
+    let replay_signed = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&stale_authorize), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(replay_signed).assert_err(SubscriptionsError::StaleAuthorityGeneration);
+
     let source_state = fetch_account::<TokenAccount>(litesvm, &source);
     assert!(source_state.delegate.is_none());
     assert!(litesvm.get_account(&authority).is_none());
+}
+
+#[test]
+fn vnext_authorize_rejects_a_signed_action_after_its_onchain_deadline() {
+    let (litesvm, subscriber) = &mut setup();
+    let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, Some(subscriber.pubkey()), &[]);
+    let source = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);
+    let (registry, authority) = derive_vnext_accounts(&subscriber.pubkey(), &mint, &source);
+
+    let deadline = crate::tests::utils::current_ts() + 60;
+    let authorize = authorize_ix(
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        0,
+        0,
+        deadline,
+    );
+    let signed = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&authorize), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+
+    // Move only the on-chain Unix clock. The recent blockhash/slot remains
+    // valid, so the Program deadline—not transaction expiry—must reject it.
+    let original_slot = litesvm.get_sysvar::<solana_clock::Clock>().slot;
+    crate::tests::utils::set_clock(litesvm, deadline + 1);
+    assert_eq!(litesvm.get_sysvar::<solana_clock::Clock>().slot, original_slot);
+
+    litesvm.send_transaction(signed).assert_err(SubscriptionsError::AuthorityActionExpired);
+
+    assert!(litesvm.get_account(&registry).is_none());
+    assert!(litesvm.get_account(&authority).is_none());
+    let source_state = fetch_account::<TokenAccount>(litesvm, &source);
+    assert_eq!(source_state.amount, 1_000_000);
+    assert!(source_state.delegate.is_none());
 }
 
 #[test]

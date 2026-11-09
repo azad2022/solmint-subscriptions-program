@@ -1018,6 +1018,23 @@ mod transfer_freshness_tests {
     }
 
     #[test]
+    fn v1_transfer_handler_fails_closed() {
+        let data = VNextTransferData {
+            amount: 1,
+            delegator: Address::from([1; 32]),
+            mint: Address::from([2; 32]),
+            expected_plan_revision: 4,
+            expected_plan_nonce: 7,
+            expected_lifecycle_revision: 9,
+            expected_lifecycle_nonce: 12,
+            expected_authority_generation: 3,
+            not_after_ts: 200,
+        };
+        let mut accounts = [];
+        assert_custom_error(process_transfer(&mut accounts, &data), SubscriptionsError::LegacyVNextTransferDisabled);
+    }
+
+    #[test]
     fn v1_transfer_payload_layout_remains_frozen_and_v2_is_additive() {
         assert_eq!(VNextTransferData::LEN, 120);
         assert_eq!(VNextTransferV2Data::LEN, 136);

@@ -34,21 +34,14 @@ fn vnext_legacy_program_rejects_all_vnext_instruction_discriminators() {
     let payer = init_wallet(&mut litesvm, 100_000_000_000);
 
     for discriminator in 18u8..=26 {
-        let ix = Instruction {
-            program_id: PROGRAM_ID,
-            accounts: vec![],
-            data: vec![discriminator],
-        };
+        let ix = Instruction { program_id: PROGRAM_ID, accounts: vec![], data: vec![discriminator] };
         let transaction = Transaction::new(
             &[&payer],
             Message::new(std::slice::from_ref(&ix), Some(&payer.pubkey())),
             litesvm.latest_blockhash(),
         );
         let result = litesvm.send_transaction(transaction);
-        assert!(
-            result.is_err(),
-            "immutable v0.5.0 Program unexpectedly accepted VNext discriminator {discriminator}"
-        );
+        assert!(result.is_err(), "immutable v0.5.0 Program unexpectedly accepted VNext discriminator {discriminator}");
     }
 
     // No VNext account can be created by a legacy-only instruction dispatch.

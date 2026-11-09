@@ -30,6 +30,7 @@ pub const CANCEL_DISCRIMINATOR: &u8 = &23;
 pub const CANCEL_NOW_DISCRIMINATOR: &u8 = &24;
 pub const RESUME_DISCRIMINATOR: &u8 = &25;
 pub const TRANSFER_DISCRIMINATOR: &u8 = &26;
+pub const TRANSFER_V2_DISCRIMINATOR: &u8 = &27;
 
 /// Exact expected state and deadline for one Subscription lifecycle action.
 #[repr(C, packed)]

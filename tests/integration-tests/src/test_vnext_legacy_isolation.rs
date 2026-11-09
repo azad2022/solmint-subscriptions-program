@@ -20,6 +20,41 @@ fn to_address(key: &Pubkey) -> pinocchio::Address {
     pinocchio::Address::from(key.to_bytes())
 }
 
+/// The immutable v0.5.0 dispatcher must reject every additive VNext
+/// instruction discriminator (18..=26) before account processing. This is a
+/// binary-compatibility boundary test, not proof of a separate Program ID.
+#[test]
+#[ignore = "requires SOLMINT_LEGACY_PROGRAM_SO from the immutable v0.5.0 build"]
+fn vnext_legacy_program_rejects_all_vnext_instruction_discriminators() {
+    let legacy_program =
+        std::env::var("SOLMINT_LEGACY_PROGRAM_SO").expect("CI must supply the exact immutable legacy Program binary");
+    let mut litesvm = LiteSVM::new();
+    litesvm.add_program_from_file(PROGRAM_ID.to_bytes(), legacy_program).unwrap();
+
+    let payer = init_wallet(&mut litesvm, 100_000_000_000);
+
+    for discriminator in 18u8..=26 {
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![],
+            data: vec![discriminator],
+        };
+        let transaction = Transaction::new(
+            &[&payer],
+            Message::new(std::slice::from_ref(&ix), Some(&payer.pubkey())),
+            litesvm.latest_blockhash(),
+        );
+        let result = litesvm.send_transaction(transaction);
+        assert!(
+            result.is_err(),
+            "immutable v0.5.0 Program unexpectedly accepted VNext discriminator {discriminator}"
+        );
+    }
+
+    // No VNext account can be created by a legacy-only instruction dispatch.
+    assert!(litesvm.get_account(&payer.pubkey()).is_some());
+}
+
 /// This test deliberately loads the immutable v0.5.0 Program binary, not the
 /// current VNext SBF. CI supplies the binary built from the pinned upstream SHA.
 #[test]

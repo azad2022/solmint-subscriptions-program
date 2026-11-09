@@ -667,15 +667,13 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         Message::new(std::slice::from_ref(&stale_subscribe), Some(&subscriber.pubkey())),
         litesvm.latest_blockhash(),
     );
-    litesvm.send_transaction(replayed_subscribe)
-        .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
+    litesvm.send_transaction(replayed_subscribe).assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
     let replayed_transfer = Transaction::new(
         &[&*merchant],
         Message::new(std::slice::from_ref(&stale_transfer), Some(&merchant.pubkey())),
         litesvm.latest_blockhash(),
     );
-    litesvm.send_transaction(replayed_transfer)
-        .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
+    litesvm.send_transaction(replayed_transfer).assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
 
     let lifecycle_account = litesvm.get_account(&lifecycle_registry).unwrap();
     let lifecycle = SubscriptionLifecycleRegistry::load(&lifecycle_account.data).unwrap();

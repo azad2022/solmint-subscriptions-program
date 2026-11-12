@@ -32,8 +32,8 @@ fn to_pubkey(address: pinocchio::Address) -> Pubkey {
 }
 
 fn load_immutable_legacy_program() -> LiteSVM {
-    let legacy_program = std::env::var("SOLMINT_LEGACY_PROGRAM_SO")
-        .expect("CI must supply the exact immutable v0.5.0 Program binary");
+    let legacy_program =
+        std::env::var("SOLMINT_LEGACY_PROGRAM_SO").expect("CI must supply the exact immutable v0.5.0 Program binary");
     let mut litesvm = LiteSVM::new();
     litesvm.add_program_from_file(PROGRAM_ID.to_bytes(), legacy_program).unwrap();
 
@@ -58,16 +58,10 @@ fn seed_vnext_non_ata_lineage(
     let source_address = to_address(source);
     let token_program_address = to_address(&TOKEN_PROGRAM_ID);
 
-    let (registry_address, registry_bump) = AuthorityConsentRegistry::find_pda(
-        &subscriber_address,
-        &mint_address,
-        &source_address,
-    );
-    let (authority_address, authority_bump) = VNextSubscriptionAuthority::find_pda(
-        &subscriber_address,
-        &mint_address,
-        &source_address,
-    );
+    let (registry_address, registry_bump) =
+        AuthorityConsentRegistry::find_pda(&subscriber_address, &mint_address, &source_address);
+    let (authority_address, authority_bump) =
+        VNextSubscriptionAuthority::find_pda(&subscriber_address, &mint_address, &source_address);
     let registry = to_pubkey(registry_address);
     let authority = to_pubkey(authority_address);
 
@@ -103,10 +97,7 @@ fn seed_vnext_non_ata_lineage(
     for (address, data) in [(registry, registry_data), (authority, authority_data)] {
         let lamports = litesvm.minimum_balance_for_rent_exemption(data.len());
         litesvm
-            .set_account(
-                address,
-                Account { lamports, data, owner: PROGRAM_ID, executable: false, rent_epoch: 0 },
-            )
+            .set_account(address, Account { lamports, data, owner: PROGRAM_ID, executable: false, rent_epoch: 0 })
             .unwrap();
     }
 
@@ -249,12 +240,10 @@ fn vnext_legacy_program_cannot_delegate_a_non_ata_source() {
     let subscriber_address = to_address(&subscriber.pubkey());
     let mint_address = to_address(&mint);
     let source_address = to_address(&source);
-    let vnext_registry = to_pubkey(
-        AuthorityConsentRegistry::find_pda(&subscriber_address, &mint_address, &source_address).0,
-    );
-    let vnext_authority = to_pubkey(
-        VNextSubscriptionAuthority::find_pda(&subscriber_address, &mint_address, &source_address).0,
-    );
+    let vnext_registry =
+        to_pubkey(AuthorityConsentRegistry::find_pda(&subscriber_address, &mint_address, &source_address).0);
+    let vnext_authority =
+        to_pubkey(VNextSubscriptionAuthority::find_pda(&subscriber_address, &mint_address, &source_address).0);
     let (legacy_authority, _) = Pubkey::find_program_address(
         &[SubscriptionAuthority::SEED, subscriber.pubkey().as_ref(), mint.as_ref()],
         &PROGRAM_ID,
@@ -294,14 +283,7 @@ fn vnext_legacy_program_authority_and_transfer_routes_preserve_non_ata_lineage()
     let subscriber = init_wallet(&mut litesvm, 100_000_000_000);
     let delegatee = init_wallet(&mut litesvm, 100_000_000_000);
 
-    let mint = init_mint(
-        &mut litesvm,
-        TOKEN_PROGRAM_ID,
-        MINT_DECIMALS,
-        10_000_000,
-        Some(subscriber.pubkey()),
-        &[],
-    );
+    let mint = init_mint(&mut litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 10_000_000, Some(subscriber.pubkey()), &[]);
     let subscriber_ata = init_ata(&mut litesvm, mint, subscriber.pubkey(), 2_000_000);
     let vnext_source = init_aux_token_account(&mut litesvm, mint, subscriber.pubkey(), 2_000_000);
     let delegatee_ata = init_ata(&mut litesvm, mint, delegatee.pubkey(), 0);
@@ -315,8 +297,7 @@ fn vnext_legacy_program_authority_and_transfer_routes_preserve_non_ata_lineage()
 
     // The old instruction is still valid for the canonical ATA. This proves
     // legacy dispatch remains active and is not silently disabled by additive VNext selectors.
-    let (legacy_init, legacy_authority, _) =
-        initialize_subscription_authority_action(&mut litesvm, &subscriber, mint);
+    let (legacy_init, legacy_authority, _) = initialize_subscription_authority_action(&mut litesvm, &subscriber, mint);
     assert!(legacy_init.is_ok(), "the pinned v0.5.0 ATA initialization should remain valid");
     assert_ne!(legacy_authority, vnext_authority);
 
@@ -326,24 +307,18 @@ fn vnext_legacy_program_authority_and_transfer_routes_preserve_non_ata_lineage()
     assert_eq!(vnext_source_after_init.delegate.unwrap(), vnext_authority);
 
     let now = litesvm.get_sysvar::<Clock>().unix_timestamp;
-    let (fixed_created, fixed_delegation) = CreateDelegation::new(
-        &mut litesvm,
-        &subscriber,
-        mint,
-        delegatee.pubkey(),
-    )
-    .nonce(71)
-    .fixed(500_000, now + 86_400);
+    let (fixed_created, fixed_delegation) = CreateDelegation::new(&mut litesvm, &subscriber, mint, delegatee.pubkey())
+        .nonce(71)
+        .fixed(500_000, now + 86_400);
     assert!(fixed_created.is_ok(), "legacy fixed delegation on ATA should be constructible");
 
-    let (recurring_created, recurring_delegation) = CreateDelegation::new(
-        &mut litesvm,
-        &subscriber,
-        mint,
-        delegatee.pubkey(),
-    )
-    .nonce(72)
-    .recurring(500_000, 3_600, now, now + 86_400);
+    let (recurring_created, recurring_delegation) =
+        CreateDelegation::new(&mut litesvm, &subscriber, mint, delegatee.pubkey()).nonce(72).recurring(
+            500_000,
+            3_600,
+            now,
+            now + 86_400,
+        );
     assert!(recurring_created.is_ok(), "legacy recurring delegation on ATA should be constructible");
 
     // A legacy permission-creation instruction may not reinterpret a VNext
@@ -381,10 +356,7 @@ fn vnext_legacy_program_authority_and_transfer_routes_preserve_non_ata_lineage()
     assert!(!send_signed(&mut litesvm, &subscriber, create_recurring_against_vnext));
 
     // Legacy close/revoke/recovery paths must not close or reinterpret VNext accounts.
-    assert!(CloseSubscriptionAuthority::new(&mut litesvm, &subscriber, mint)
-        .pda(vnext_authority)
-        .execute()
-        .is_err());
+    assert!(CloseSubscriptionAuthority::new(&mut litesvm, &subscriber, mint).pda(vnext_authority).execute().is_err());
 
     assert!(RevokeSubscriptionAuthority::new(&mut litesvm, &subscriber, mint)
         .ata(subscriber_ata)
@@ -392,44 +364,26 @@ fn vnext_legacy_program_authority_and_transfer_routes_preserve_non_ata_lineage()
         .execute()
         .is_err());
 
-    assert!(RevokeDelegation::new(
-        &mut litesvm,
-        &subscriber,
-        mint,
-        delegatee.pubkey(),
-        75,
-    )
-    .pda(vnext_registry)
-    .execute()
-    .is_err());
+    assert!(RevokeDelegation::new(&mut litesvm, &subscriber, mint, delegatee.pubkey(), 75,)
+        .pda(vnext_registry)
+        .execute()
+        .is_err());
 
-    assert!(RevokeAbandonedDelegation::new(
-        &mut litesvm,
-        &subscriber,
-        subscriber.pubkey(),
-        mint,
-        delegatee.pubkey(),
-    )
-    .nonce(76)
-    .pda(vnext_registry)
-    .authority(vnext_authority)
-    .execute()
-    .is_err());
+    assert!(RevokeAbandonedDelegation::new(&mut litesvm, &subscriber, subscriber.pubkey(), mint, delegatee.pubkey(),)
+        .nonce(76)
+        .pda(vnext_registry)
+        .authority(vnext_authority)
+        .execute()
+        .is_err());
 
     // Supplying the non-ATA VNext source to a valid legacy delegation must not
     // transfer from it. Account substitution of the VNext Authority must also fail.
-    assert!(TransferDelegation::new(
-        &mut litesvm,
-        &delegatee,
-        subscriber.pubkey(),
-        mint,
-        fixed_delegation,
-    )
-    .amount(10_000)
-    .from(vnext_source)
-    .to(delegatee_ata)
-    .fixed()
-    .is_err());
+    assert!(TransferDelegation::new(&mut litesvm, &delegatee, subscriber.pubkey(), mint, fixed_delegation,)
+        .amount(10_000)
+        .from(vnext_source)
+        .to(delegatee_ata)
+        .fixed()
+        .is_err());
 
     let substituted_authority_transfer = legacy_transfer_ix(
         4,
@@ -442,10 +396,7 @@ fn vnext_legacy_program_authority_and_transfer_routes_preserve_non_ata_lineage()
         &subscriber.pubkey(),
         &delegatee.pubkey(),
         10_000,
-        vec![
-            AccountMeta::new(vnext_registry, false),
-            AccountMeta::new(vnext_authority, false),
-        ],
+        vec![AccountMeta::new(vnext_registry, false), AccountMeta::new(vnext_authority, false)],
     );
     assert!(!send_signed(&mut litesvm, &delegatee, substituted_authority_transfer));
 
@@ -478,10 +429,7 @@ fn vnext_legacy_program_authority_and_transfer_routes_preserve_non_ata_lineage()
         &subscriber.pubkey(),
         &delegatee.pubkey(),
         10_000,
-        vec![
-            AccountMeta::new(vnext_registry, false),
-            AccountMeta::new(vnext_authority, false),
-        ],
+        vec![AccountMeta::new(vnext_registry, false), AccountMeta::new(vnext_authority, false)],
     );
     assert!(send_signed(&mut litesvm, &delegatee, fixed_with_remaining_accounts));
 
@@ -496,10 +444,7 @@ fn vnext_legacy_program_authority_and_transfer_routes_preserve_non_ata_lineage()
         &subscriber.pubkey(),
         &delegatee.pubkey(),
         10_000,
-        vec![
-            AccountMeta::new(vnext_registry, false),
-            AccountMeta::new(vnext_authority, false),
-        ],
+        vec![AccountMeta::new(vnext_registry, false), AccountMeta::new(vnext_authority, false)],
     );
     assert!(send_signed(&mut litesvm, &delegatee, recurring_with_remaining_accounts));
 

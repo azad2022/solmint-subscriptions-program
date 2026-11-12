@@ -23,7 +23,7 @@ use crate::{
             initialize_subscription_authority_action, CancelSubscription, CancelSubscriptionNow,
             CloseSubscriptionAuthority, CreateDelegation, CreatePlan, DeletePlan, ResumeSubscription,
             RevokeAbandonedDelegation, RevokeDelegation, RevokeSubscription, RevokeSubscriptionAuthority,
-            ResumeSubscription, Subscribe, TransferDelegation, TransferSubscription, UpdatePlan,
+            Subscribe, TransferDelegation, TransferSubscription, UpdatePlan,
         },
     },
     SubscriptionAuthority, AUTHORITY_REGISTRY_ACTIVE,

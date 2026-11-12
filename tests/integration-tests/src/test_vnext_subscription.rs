@@ -821,15 +821,16 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     // stale after the same Subscription PDA is reused at revision 5.
     litesvm.send_transaction(stale_transfer_signed).assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
 
-    // A newly signed transaction carrying the same obsolete Subscribe/Transfer
-    // payloads must also fail; a new blockhash cannot reset lifecycle lineage.
+    // A fresh blockhash must not make the obsolete Subscribe or Transfer usable.
+    // The active re-subscription rejects the old Subscribe as AlreadySubscribed;
+    // the old Transfer must be rejected by the persistent lifecycle revision.
     litesvm.expire_blockhash();
     let replayed_subscribe = Transaction::new(
         &[&*subscriber],
         Message::new(std::slice::from_ref(&stale_subscribe), Some(&subscriber.pubkey())),
         litesvm.latest_blockhash(),
     );
-    litesvm.send_transaction(replayed_subscribe).assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
+    litesvm.send_transaction(replayed_subscribe).assert_err(SubscriptionsError::AlreadySubscribed);
     let replayed_transfer = Transaction::new(
         &[&merchant],
         Message::new(std::slice::from_ref(&stale_transfer), Some(&merchant.pubkey())),

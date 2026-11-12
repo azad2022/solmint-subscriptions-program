@@ -23,7 +23,7 @@ use crate::{
             initialize_subscription_authority_action, CancelSubscription, CancelSubscriptionNow,
             CloseSubscriptionAuthority, CreateDelegation, CreatePlan, DeletePlan, ResumeSubscription,
             RevokeAbandonedDelegation, RevokeDelegation, RevokeSubscription, RevokeSubscriptionAuthority,
-            TransferDelegation, TransferSubscription, UpdatePlan,
+            ResumeSubscription, Subscribe, TransferDelegation, TransferSubscription, UpdatePlan,
         },
     },
     SubscriptionAuthority, AUTHORITY_REGISTRY_ACTIVE,
@@ -727,4 +727,55 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
         assert_eq!(after.owner, before.owner, "{label} owner changed after legacy attempts");
         assert_eq!(after.executable, before.executable, "{label} executable flag changed");
     }
+
+    // Positive controls: the exact same immutable legacy binary must continue
+    // to operate a canonical ATA-backed legacy Subscription. These successful
+    // operations distinguish VNext account-boundary rejection from a blanket
+    // failure of the legacy Subscription instruction family.
+    let legacy_subscribe =
+        Subscribe::new(&mut litesvm, &subscriber, merchant.pubkey(), legacy_plan, plan_id, legacy_plan_bump, mint)
+            .execute();
+    assert!(legacy_subscribe.is_ok(), "legacy Subscribe control case must remain operational");
+    assert!(litesvm.get_account(&legacy_subscription).is_some());
+
+    let legacy_transfer = TransferSubscription::new(
+        &mut litesvm,
+        &merchant,
+        subscriber.pubkey(),
+        mint,
+        legacy_subscription,
+        legacy_plan,
+    )
+    .amount(10_000)
+    .to(merchant_ata)
+    .execute();
+    assert!(legacy_transfer.is_ok(), "legacy TransferSubscription control case must remain operational");
+
+    let legacy_cancel =
+        CancelSubscription::new(&mut litesvm, &subscriber, legacy_plan, legacy_subscription).execute();
+    assert!(legacy_cancel.is_ok(), "legacy CancelSubscription control case must remain operational");
+
+    let legacy_resume =
+        ResumeSubscription::new(&mut litesvm, &subscriber, legacy_plan, legacy_subscription, mint).execute();
+    assert!(legacy_resume.is_ok(), "legacy ResumeSubscription control case must remain operational");
+
+    let legacy_cancel_now = CancelSubscriptionNow::new(
+        &mut litesvm,
+        &subscriber,
+        &merchant,
+        legacy_plan,
+        legacy_subscription,
+    )
+    .expected_current_period_start_ts(now)
+    .execute();
+    assert!(legacy_cancel_now.is_ok(), "legacy CancelSubscriptionNow control case must remain operational");
+
+    let legacy_revoke =
+        RevokeSubscription::new(&mut litesvm, &subscriber, legacy_subscription, legacy_plan).execute();
+    assert!(legacy_revoke.is_ok(), "legacy RevokeSubscription control case must remain operational");
+    assert!(litesvm.get_account(&legacy_subscription).is_none());
+
+    let vnext_source_after_controls = litesvm.get_account(&vnext_source).unwrap();
+    assert_eq!(vnext_source_after_controls.data, source_before.data);
+    assert_eq!(vnext_source_after_controls.lamports, source_before.lamports);
 }

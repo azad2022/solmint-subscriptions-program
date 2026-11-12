@@ -185,6 +185,41 @@ fn legacy_transfer_ix(
     Instruction { program_id: PROGRAM_ID, accounts, data }
 }
 
+fn legacy_subscription_transfer_ix(
+    subscription: Pubkey,
+    plan: Pubkey,
+    authority: Pubkey,
+    source: Pubkey,
+    destination: Pubkey,
+    mint: Pubkey,
+    token_program: Pubkey,
+    delegator: &Pubkey,
+    caller: &Pubkey,
+    amount: u64,
+    remaining: Vec<AccountMeta>,
+) -> Instruction {
+    let event_authority = Pubkey::find_program_address(&[b"event_authority"], &PROGRAM_ID).0;
+    let mut accounts = vec![
+        AccountMeta::new(subscription, false),
+        AccountMeta::new_readonly(plan, false),
+        AccountMeta::new_readonly(authority, false),
+        AccountMeta::new(source, false),
+        AccountMeta::new(destination, false),
+        AccountMeta::new_readonly(*caller, true),
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(token_program, false),
+        AccountMeta::new_readonly(event_authority, false),
+        AccountMeta::new_readonly(PROGRAM_ID, false),
+    ];
+    accounts.extend(remaining);
+
+    let mut data = vec![*crate::instructions::transfer_subscription::DISCRIMINATOR];
+    data.extend_from_slice(&amount.to_le_bytes());
+    data.extend_from_slice(delegator.as_ref());
+    data.extend_from_slice(mint.as_ref());
+    Instruction { program_id: PROGRAM_ID, accounts, data }
+}
+
 fn assert_vnext_lineage_unchanged(
     litesvm: &LiteSVM,
     registry: &Pubkey,
@@ -602,6 +637,12 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
         "legacy Subscription PDA must not alias the source-bound VNext PDA"
     );
 
+    let legacy_subscribe_control =
+        Subscribe::new(&mut litesvm, &subscriber, merchant.pubkey(), legacy_plan, plan_id, legacy_plan_bump, mint)
+            .execute();
+    assert!(legacy_subscribe_control.is_ok(), "legacy Subscribe control case must remain operational");
+    let legacy_subscription_before = litesvm.get_account(&legacy_subscription).unwrap();
+
     let legacy_plan_before = litesvm.get_account(&legacy_plan).unwrap();
     let plan_before = litesvm.get_account(&vnext_plan).unwrap();
     let plan_registry_before = litesvm.get_account(&plan_registry).unwrap();
@@ -657,9 +698,16 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
         !send_signed(&mut litesvm, &subscriber, legacy_subscribe),
         "legacy Subscribe must reject a VNext Plan/Subscription binding"
     );
-    assert!(
-        litesvm.get_account(&legacy_subscription).is_none(),
-        "failed legacy Subscribe must not create another Subscription PDA"
+    let legacy_subscription_after_bad_subscribe = litesvm.get_account(&legacy_subscription).unwrap();
+    assert_eq!(
+        legacy_subscription_after_bad_subscribe.data,
+        legacy_subscription_before.data,
+        "account substitution during legacy Subscribe changed the real legacy Subscription"
+    );
+    assert_eq!(
+        legacy_subscription_after_bad_subscribe.lamports,
+        legacy_subscription_before.lamports,
+        "account substitution during legacy Subscribe changed legacy Subscription lamports"
     );
 
     assert!(
@@ -670,6 +718,45 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
             .is_err(),
         "legacy TransferSubscription must reject VNext Plan/Subscription account data"
     );
+    let legacy_transfer_from_vnext_non_ata = legacy_subscription_transfer_ix(
+        legacy_subscription,
+        legacy_plan,
+        legacy_authority,
+        vnext_source,
+        merchant_ata,
+        mint,
+        TOKEN_PROGRAM_ID,
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        10_000,
+        vec![
+            AccountMeta::new(authority_registry, false),
+            AccountMeta::new(vnext_authority, false),
+        ],
+    );
+    assert!(
+        !send_signed(&mut litesvm, &merchant, legacy_transfer_from_vnext_non_ata),
+        "legacy TransferSubscription must reject a VNext non-ATA source"
+    );
+
+    let legacy_transfer_wrong_token_program = legacy_subscription_transfer_ix(
+        legacy_subscription,
+        legacy_plan,
+        legacy_authority,
+        subscriber_ata,
+        merchant_ata,
+        mint,
+        TOKEN_2022_PROGRAM_ID,
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        10_000,
+        vec![],
+    );
+    assert!(
+        !send_signed(&mut litesvm, &merchant, legacy_transfer_wrong_token_program),
+        "legacy TransferSubscription must reject Token Program substitution"
+    );
+
     assert!(
         CancelSubscription::new(&mut litesvm, &subscriber, legacy_plan, vnext_subscription).execute().is_err(),
         "legacy CancelSubscription must not mutate a VNext Subscription"
@@ -711,6 +798,7 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
 
     for (address, before, label) in [
         (legacy_plan, legacy_plan_before, "legacy Plan"),
+        (legacy_subscription, legacy_subscription_before, "legacy Subscription"),
         (vnext_plan, plan_before, "VNext Plan"),
         (plan_registry, plan_registry_before, "Plan Revision Registry"),
         (vnext_subscription, subscription_before, "VNext Subscription"),
@@ -732,24 +820,43 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
     // to operate a canonical ATA-backed legacy Subscription. These successful
     // operations distinguish VNext account-boundary rejection from a blanket
     // failure of the legacy Subscription instruction family.
-    let legacy_subscribe =
-        Subscribe::new(&mut litesvm, &subscriber, merchant.pubkey(), legacy_plan, plan_id, legacy_plan_bump, mint)
-            .execute();
-    assert!(legacy_subscribe.is_ok(), "legacy Subscribe control case must remain operational");
-    assert!(litesvm.get_account(&legacy_subscription).is_some());
-
-    let legacy_transfer = TransferSubscription::new(
-        &mut litesvm,
-        &merchant,
-        subscriber.pubkey(),
-        mint,
+    // The legacy Subscription is now real and valid. First execute an otherwise
+    // valid SPL Token pull while injecting VNext Registry/Authority as trailing
+    // accounts. On a mint without a hook, the legacy path must not interpret or
+    // mutate those VNext accounts.
+    let legacy_transfer_with_vnext_remaining = legacy_subscription_transfer_ix(
         legacy_subscription,
         legacy_plan,
-    )
-    .amount(10_000)
-    .to(merchant_ata)
-    .execute();
-    assert!(legacy_transfer.is_ok(), "legacy TransferSubscription control case must remain operational");
+        legacy_authority,
+        subscriber_ata,
+        merchant_ata,
+        mint,
+        TOKEN_PROGRAM_ID,
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        10_000,
+        vec![
+            AccountMeta::new(authority_registry, false),
+            AccountMeta::new(vnext_authority, false),
+        ],
+    );
+    assert!(
+        send_signed(&mut litesvm, &merchant, legacy_transfer_with_vnext_remaining),
+        "valid legacy TransferSubscription with unrelated VNext remaining accounts must remain operational"
+    );
+    assert_vnext_lineage_unchanged(
+        &litesvm,
+        &authority_registry,
+        &authority_registry_before.data,
+        authority_registry_before.lamports,
+        &vnext_authority,
+        &authority_before.data,
+        authority_before.lamports,
+        &vnext_source,
+        &source_before.data,
+        source_before.lamports,
+        vnext_authority,
+    );
 
     let legacy_cancel =
         CancelSubscription::new(&mut litesvm, &subscriber, legacy_plan, legacy_subscription).execute();

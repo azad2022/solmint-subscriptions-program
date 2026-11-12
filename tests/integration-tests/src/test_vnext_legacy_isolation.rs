@@ -2,6 +2,7 @@ use litesvm::LiteSVM;
 use solana_account::Account;
 use solana_clock::Clock;
 use solana_instruction::{AccountMeta, Instruction};
+use solana_keypair::Keypair;
 use solana_message::Message;
 use solana_program_pack::Pack;
 use solana_pubkey::Pubkey;
@@ -119,7 +120,7 @@ fn seed_vnext_non_ata_lineage(
     (registry, authority)
 }
 
-fn send_signed(litesvm: &mut LiteSVM, signer: &impl Signer, instruction: Instruction) -> bool {
+fn send_signed(litesvm: &mut LiteSVM, signer: &Keypair, instruction: Instruction) -> bool {
     let transaction = Transaction::new(
         &[signer],
         Message::new(std::slice::from_ref(&instruction), Some(&signer.pubkey())),

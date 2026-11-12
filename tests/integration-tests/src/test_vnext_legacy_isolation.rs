@@ -599,13 +599,32 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
 
     let (legacy_plan, legacy_plan_bump) = crate::tests::pda::get_plan_pda(&merchant.pubkey(), plan_id);
     assert_ne!(legacy_plan, vnext_plan, "legacy and VNext Plan namespaces must differ");
+
+    let (legacy_plan_result, created_legacy_plan) = CreatePlan::new(&mut litesvm, &merchant, mint)
+        .plan_id(plan_id)
+        .amount(terms.amount)
+        .period_hours(terms.period_hours)
+        .execute();
+    assert!(legacy_plan_result.is_ok(), "the immutable legacy Plan control case must remain usable");
+    assert_eq!(created_legacy_plan, legacy_plan);
+
+    let legacy_plan_account = litesvm.get_account(&legacy_plan).unwrap();
+    let legacy_plan_state = crate::Plan::load(&legacy_plan_account.data).unwrap();
+    let legacy_plan_mint = legacy_plan_state.data.mint;
+    let legacy_plan_amount = legacy_plan_state.data.terms.amount;
+    let legacy_plan_period_hours = legacy_plan_state.data.terms.period_hours;
+    let legacy_plan_created_at = legacy_plan_state.data.terms.created_at;
+    let legacy_authority_account = litesvm.get_account(&legacy_authority).unwrap();
+    let legacy_init_id = SubscriptionAuthority::load(&legacy_authority_account.data).unwrap().init_id;
+
     let (legacy_subscription, _) =
-        crate::tests::pda::get_subscription_pda(&vnext_plan, &subscriber.pubkey());
+        crate::tests::pda::get_subscription_pda(&legacy_plan, &subscriber.pubkey());
     assert_ne!(
         legacy_subscription, vnext_subscription,
         "legacy Subscription PDA must not alias the source-bound VNext PDA"
     );
 
+    let legacy_plan_before = litesvm.get_account(&legacy_plan).unwrap();
     let plan_before = litesvm.get_account(&vnext_plan).unwrap();
     let plan_registry_before = litesvm.get_account(&plan_registry).unwrap();
     let subscription_before = litesvm.get_account(&vnext_subscription).unwrap();
@@ -636,18 +655,18 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
     let mut subscribe_data = vec![*crate::instructions::subscribe::DISCRIMINATOR];
     subscribe_data.extend_from_slice(&plan_id.to_le_bytes());
     subscribe_data.push(legacy_plan_bump);
-    subscribe_data.extend_from_slice(mint.as_ref());
-    subscribe_data.extend_from_slice(&terms.amount.to_le_bytes());
-    subscribe_data.extend_from_slice(&terms.period_hours.to_le_bytes());
-    subscribe_data.extend_from_slice(&terms.created_at.to_le_bytes());
-    subscribe_data.extend_from_slice(&0i64.to_le_bytes());
+    subscribe_data.extend_from_slice(legacy_plan_mint.as_ref());
+    subscribe_data.extend_from_slice(&legacy_plan_amount.to_le_bytes());
+    subscribe_data.extend_from_slice(&legacy_plan_period_hours.to_le_bytes());
+    subscribe_data.extend_from_slice(&legacy_plan_created_at.to_le_bytes());
+    subscribe_data.extend_from_slice(&legacy_init_id.to_le_bytes());
     let event_authority = Pubkey::find_program_address(&[b"event_authority"], &PROGRAM_ID).0;
     let legacy_subscribe = Instruction {
         program_id: PROGRAM_ID,
         accounts: vec![
             AccountMeta::new_readonly(subscriber.pubkey(), true),
             AccountMeta::new_readonly(merchant.pubkey(), false),
-            AccountMeta::new_readonly(vnext_plan, false),
+            AccountMeta::new_readonly(legacy_plan, false),
             AccountMeta::new(vnext_subscription, false),
             AccountMeta::new_readonly(legacy_authority, false),
             AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
@@ -672,7 +691,7 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
             subscriber.pubkey(),
             mint,
             vnext_subscription,
-            vnext_plan,
+            legacy_plan,
         )
         .amount(10_000)
         .to(merchant_ata)
@@ -681,7 +700,7 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
         "legacy TransferSubscription must reject VNext Plan/Subscription account data"
     );
     assert!(
-        CancelSubscription::new(&mut litesvm, &subscriber, vnext_plan, vnext_subscription)
+        CancelSubscription::new(&mut litesvm, &subscriber, legacy_plan, vnext_subscription)
             .execute()
             .is_err(),
         "legacy CancelSubscription must not mutate a VNext Subscription"
@@ -691,7 +710,7 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
             &mut litesvm,
             &subscriber,
             &merchant,
-            vnext_plan,
+            legacy_plan,
             vnext_subscription,
         )
         .expected_current_period_start_ts(now)
@@ -703,7 +722,7 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
         ResumeSubscription::new(
             &mut litesvm,
             &subscriber,
-            vnext_plan,
+            legacy_plan,
             vnext_subscription,
             mint,
         )
@@ -714,7 +733,7 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
         "legacy ResumeSubscription must not mutate a VNext Subscription"
     );
     assert!(
-        RevokeSubscription::new(&mut litesvm, &subscriber, vnext_subscription, vnext_plan)
+        RevokeSubscription::new(&mut litesvm, &subscriber, vnext_subscription, legacy_plan)
             .execute()
             .is_err(),
         "legacy RevokeSubscription must not close a VNext Subscription"
@@ -726,7 +745,7 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
             AccountMeta::new(subscriber.pubkey(), true),
             AccountMeta::new(vnext_subscription, false),
             AccountMeta::new_readonly(legacy_authority, false),
-            AccountMeta::new_readonly(vnext_plan, false),
+            AccountMeta::new_readonly(legacy_plan, false),
         ],
         data: vec![*crate::instructions::revoke_abandoned_subscription::DISCRIMINATOR],
     };
@@ -736,6 +755,7 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
     );
 
     for (address, before, label) in [
+        (legacy_plan, legacy_plan_before, "legacy Plan"),
         (vnext_plan, plan_before, "VNext Plan"),
         (plan_registry, plan_registry_before, "Plan Revision Registry"),
         (vnext_subscription, subscription_before, "VNext Subscription"),

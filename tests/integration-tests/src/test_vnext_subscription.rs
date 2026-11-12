@@ -645,7 +645,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     // not consume the same billing-period allowance a second time.
     litesvm.expire_blockhash();
     let replayed_transfer = Transaction::new(
-        &[&*merchant],
+        &[&merchant],
         Message::new(std::slice::from_ref(&fresh_transfer), Some(&merchant.pubkey())),
         litesvm.latest_blockhash(),
     );
@@ -703,7 +703,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
         TOKEN_PROGRAM_ID,
     );
     let expired_transfer_signed = Transaction::new(
-        &[&*merchant],
+        &[&merchant],
         Message::new(std::slice::from_ref(&expired_transfer), Some(&merchant.pubkey())),
         litesvm.latest_blockhash(),
     );
@@ -831,7 +831,7 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     );
     litesvm.send_transaction(replayed_subscribe).assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
     let replayed_transfer = Transaction::new(
-        &[&*merchant],
+        &[&merchant],
         Message::new(std::slice::from_ref(&stale_transfer), Some(&merchant.pubkey())),
         litesvm.latest_blockhash(),
     );

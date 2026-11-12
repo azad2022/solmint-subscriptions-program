@@ -13,16 +13,16 @@ use spl_token_2022_interface::state::Account as TokenAccount;
 use crate::{
     instructions::create_plan::{PlanData, PlanTerms},
     state::{
-        common::PlanStatus, AuthorityConsentRegistry, PlanRevisionRegistry, SubscriptionLifecycleRegistry,
-        VNextPlan, VNextSubscription, VNextSubscriptionAuthority,
+        common::PlanStatus, AuthorityConsentRegistry, PlanRevisionRegistry, SubscriptionLifecycleRegistry, VNextPlan,
+        VNextSubscription, VNextSubscriptionAuthority,
     },
     tests::{
         constants::{MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID},
         utils::{
             current_ts, fetch_account, init_ata, init_aux_token_account, init_mint, init_wallet,
             initialize_subscription_authority_action, CancelSubscription, CancelSubscriptionNow,
-            CloseSubscriptionAuthority, CreateDelegation, CreatePlan, DeletePlan, RevokeAbandonedDelegation,
-            RevokeSubscription, RevokeSubscriptionAuthority, ResumeSubscription, TransferDelegation,
+            CloseSubscriptionAuthority, CreateDelegation, CreatePlan, DeletePlan, ResumeSubscription,
+            RevokeAbandonedDelegation, RevokeSubscription, RevokeSubscriptionAuthority, TransferDelegation,
             TransferSubscription, UpdatePlan,
         },
     },
@@ -489,22 +489,14 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
     let mut litesvm = load_immutable_legacy_program();
     let subscriber = init_wallet(&mut litesvm, 100_000_000_000);
     let merchant = init_wallet(&mut litesvm, 100_000_000_000);
-    let mint = init_mint(
-        &mut litesvm,
-        TOKEN_PROGRAM_ID,
-        MINT_DECIMALS,
-        10_000_000,
-        Some(subscriber.pubkey()),
-        &[],
-    );
+    let mint = init_mint(&mut litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 10_000_000, Some(subscriber.pubkey()), &[]);
     let subscriber_ata = init_ata(&mut litesvm, mint, subscriber.pubkey(), 2_000_000);
     let merchant_ata = init_ata(&mut litesvm, mint, merchant.pubkey(), 0);
     let vnext_source = init_aux_token_account(&mut litesvm, mint, subscriber.pubkey(), 2_000_000);
 
     let (authority_registry, vnext_authority) =
         seed_vnext_non_ata_lineage(&mut litesvm, &subscriber.pubkey(), &mint, &vnext_source);
-    let (legacy_init, legacy_authority, _) =
-        initialize_subscription_authority_action(&mut litesvm, &subscriber, mint);
+    let (legacy_init, legacy_authority, _) = initialize_subscription_authority_action(&mut litesvm, &subscriber, mint);
     assert!(legacy_init.is_ok(), "legacy ATA authority setup must succeed for the control case");
 
     let now = litesvm.get_sysvar::<Clock>().unix_timestamp;
@@ -528,15 +520,8 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
     let (vnext_plan_address, vnext_plan_bump) = VNextPlan::find_pda(&merchant_address, plan_id);
     let vnext_plan = to_pubkey(vnext_plan_address);
     let mut vnext_plan_data = vec![0u8; VNextPlan::LEN];
-    VNextPlan::init(
-        &mut vnext_plan_data,
-        &merchant_address,
-        vnext_plan_bump,
-        PlanStatus::Active as u8,
-        1,
-        &plan_data,
-    )
-    .unwrap();
+    VNextPlan::init(&mut vnext_plan_data, &merchant_address, vnext_plan_bump, PlanStatus::Active as u8, 1, &plan_data)
+        .unwrap();
     set_program_owned_account(&mut litesvm, vnext_plan, vnext_plan_data);
 
     let (plan_registry_address, plan_registry_bump) =
@@ -551,10 +536,7 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
         plan_registry_bump,
     )
     .unwrap();
-    PlanRevisionRegistry::load_mut(&mut plan_registry_data)
-        .unwrap()
-        .advance(0, 0)
-        .unwrap();
+    PlanRevisionRegistry::load_mut(&mut plan_registry_data).unwrap().advance(0, 0).unwrap();
     set_program_owned_account(&mut litesvm, plan_registry, plan_registry_data);
 
     let (lifecycle_address, lifecycle_bump) =
@@ -570,10 +552,7 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
         lifecycle_bump,
     )
     .unwrap();
-    SubscriptionLifecycleRegistry::load_mut(&mut lifecycle_data)
-        .unwrap()
-        .advance(0, 0)
-        .unwrap();
+    SubscriptionLifecycleRegistry::load_mut(&mut lifecycle_data).unwrap().advance(0, 0).unwrap();
     set_program_owned_account(&mut litesvm, lifecycle_registry, lifecycle_data);
 
     let (vnext_subscription_address, vnext_subscription_bump) =
@@ -617,8 +596,7 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
     let legacy_authority_account = litesvm.get_account(&legacy_authority).unwrap();
     let legacy_init_id = SubscriptionAuthority::load(&legacy_authority_account.data).unwrap().init_id;
 
-    let (legacy_subscription, _) =
-        crate::tests::pda::get_subscription_pda(&legacy_plan, &subscriber.pubkey());
+    let (legacy_subscription, _) = crate::tests::pda::get_subscription_pda(&legacy_plan, &subscriber.pubkey());
     assert_ne!(
         legacy_subscription, vnext_subscription,
         "legacy Subscription PDA must not alias the source-bound VNext PDA"
@@ -685,57 +663,34 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
     );
 
     assert!(
-        TransferSubscription::new(
-            &mut litesvm,
-            &merchant,
-            subscriber.pubkey(),
-            mint,
-            vnext_subscription,
-            legacy_plan,
-        )
-        .amount(10_000)
-        .to(merchant_ata)
-        .execute()
-        .is_err(),
+        TransferSubscription::new(&mut litesvm, &merchant, subscriber.pubkey(), mint, vnext_subscription, legacy_plan,)
+            .amount(10_000)
+            .to(merchant_ata)
+            .execute()
+            .is_err(),
         "legacy TransferSubscription must reject VNext Plan/Subscription account data"
     );
     assert!(
-        CancelSubscription::new(&mut litesvm, &subscriber, legacy_plan, vnext_subscription)
-            .execute()
-            .is_err(),
+        CancelSubscription::new(&mut litesvm, &subscriber, legacy_plan, vnext_subscription).execute().is_err(),
         "legacy CancelSubscription must not mutate a VNext Subscription"
     );
     assert!(
-        CancelSubscriptionNow::new(
-            &mut litesvm,
-            &subscriber,
-            &merchant,
-            legacy_plan,
-            vnext_subscription,
-        )
-        .expected_current_period_start_ts(now)
-        .execute()
-        .is_err(),
+        CancelSubscriptionNow::new(&mut litesvm, &subscriber, &merchant, legacy_plan, vnext_subscription,)
+            .expected_current_period_start_ts(now)
+            .execute()
+            .is_err(),
         "legacy CancelSubscriptionNow must not mutate a VNext Subscription"
     );
     assert!(
-        ResumeSubscription::new(
-            &mut litesvm,
-            &subscriber,
-            legacy_plan,
-            vnext_subscription,
-            mint,
-        )
-        .subscription_authority(legacy_authority)
-        .expected_expires_at_ts(now + 3_600)
-        .execute()
-        .is_err(),
+        ResumeSubscription::new(&mut litesvm, &subscriber, legacy_plan, vnext_subscription, mint,)
+            .subscription_authority(legacy_authority)
+            .expected_expires_at_ts(now + 3_600)
+            .execute()
+            .is_err(),
         "legacy ResumeSubscription must not mutate a VNext Subscription"
     );
     assert!(
-        RevokeSubscription::new(&mut litesvm, &subscriber, vnext_subscription, legacy_plan)
-            .execute()
-            .is_err(),
+        RevokeSubscription::new(&mut litesvm, &subscriber, vnext_subscription, legacy_plan).execute().is_err(),
         "legacy RevokeSubscription must not close a VNext Subscription"
     );
 

@@ -1231,10 +1231,15 @@ fn vnext_stale_cancel_now_and_resume_cannot_survive_same_timestamp_aba() {
 
     let lifecycle_account = litesvm.get_account(&lifecycle_registry).unwrap();
     let lifecycle = SubscriptionLifecycleRegistry::load(&lifecycle_account.data).unwrap();
-    assert_eq!(lifecycle.revision, 6);
-    assert_eq!(lifecycle.action_nonce, 6);
+    let lifecycle_revision = lifecycle.revision;
+    let lifecycle_action_nonce = lifecycle.action_nonce;
+    assert_eq!(lifecycle_revision, 6);
+    assert_eq!(lifecycle_action_nonce, 6);
+
     let current_subscription_account = litesvm.get_account(&subscription).unwrap();
     let current_subscription = VNextSubscription::load(&current_subscription_account.data).unwrap();
-    assert_eq!(current_subscription.lifecycle_revision, 6);
-    assert_eq!(current_subscription.expires_at_ts, 0);
+    let current_lifecycle_revision = current_subscription.lifecycle_revision;
+    let current_expires_at_ts = current_subscription.expires_at_ts;
+    assert_eq!(current_lifecycle_revision, 6);
+    assert_eq!(current_expires_at_ts, 0);
 }

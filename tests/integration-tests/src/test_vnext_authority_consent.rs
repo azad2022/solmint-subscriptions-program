@@ -408,10 +408,14 @@ fn vnext_authority_consent_is_bound_to_exact_non_ata_source_account() {
     let registry_b_account = litesvm.get_account(&registry_b).unwrap();
     let registry_a_state = AuthorityConsentRegistry::load(&registry_a_account.data).unwrap();
     let registry_b_state = AuthorityConsentRegistry::load(&registry_b_account.data).unwrap();
-    assert_eq!(registry_a_state.authority_generation, 2);
-    assert_eq!(registry_a_state.status, AUTHORITY_REGISTRY_REVOKED);
-    assert_eq!(registry_b_state.authority_generation, 1);
-    assert_eq!(registry_b_state.status, AUTHORITY_REGISTRY_ACTIVE);
+    let registry_a_generation = registry_a_state.authority_generation;
+    let registry_a_status = registry_a_state.status;
+    let registry_b_generation = registry_b_state.authority_generation;
+    let registry_b_status = registry_b_state.status;
+    assert_eq!(registry_a_generation, 2);
+    assert_eq!(registry_a_status, AUTHORITY_REGISTRY_REVOKED);
+    assert_eq!(registry_b_generation, 1);
+    assert_eq!(registry_b_status, AUTHORITY_REGISTRY_ACTIVE);
 }
 
 
@@ -479,10 +483,14 @@ fn vnext_authority_consent_rejects_multiple_remaining_accounts_atomically() {
 
     let registry_account = litesvm.get_account(&registry).unwrap();
     let registry_state = AuthorityConsentRegistry::load(&registry_account.data).unwrap();
-    assert_eq!(registry_state.authority_generation, 1);
-    assert_eq!(registry_state.authorize_nonce, 1);
-    assert_eq!(registry_state.revoke_nonce, 0);
-    assert_eq!(registry_state.status, AUTHORITY_REGISTRY_ACTIVE);
+    let generation = registry_state.authority_generation;
+    let authorize_nonce = registry_state.authorize_nonce;
+    let revoke_nonce = registry_state.revoke_nonce;
+    let status = registry_state.status;
+    assert_eq!(generation, 1);
+    assert_eq!(authorize_nonce, 1);
+    assert_eq!(revoke_nonce, 0);
+    assert_eq!(status, AUTHORITY_REGISTRY_ACTIVE);
 
     assert!(litesvm.get_account(&authority).is_some());
     let source_after_failed_revoke = fetch_account::<TokenAccount>(litesvm, &source);

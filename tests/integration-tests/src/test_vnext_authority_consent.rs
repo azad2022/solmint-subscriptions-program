@@ -404,8 +404,10 @@ fn fn vnext_authority_consent_is_bound_to_exact_non_ata_source_account() {
     assert_eq!(source_b_after_revoke.delegate, Some(authority_b));
     assert_eq!(source_b_after_revoke.delegated_amount, u64::MAX);
 
-    let registry_a_state = AuthorityConsentRegistry::load(&litesvm.get_account(&registry_a).unwrap().data).unwrap();
-    let registry_b_state = AuthorityConsentRegistry::load(&litesvm.get_account(&registry_b).unwrap().data).unwrap();
+    let registry_a_account = litesvm.get_account(&registry_a).unwrap();
+    let registry_b_account = litesvm.get_account(&registry_b).unwrap();
+    let registry_a_state = AuthorityConsentRegistry::load(&registry_a_account.data).unwrap();
+    let registry_b_state = AuthorityConsentRegistry::load(&registry_b_account.data).unwrap();
     assert_eq!(registry_a_state.authority_generation, 2);
     assert_eq!(registry_a_state.status, AUTHORITY_REGISTRY_REVOKED);
     assert_eq!(registry_b_state.authority_generation, 1);

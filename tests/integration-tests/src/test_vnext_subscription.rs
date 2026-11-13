@@ -1088,9 +1088,8 @@ fn vnext_stale_cancel_now_and_resume_cannot_survive_same_timestamp_aba() {
         litesvm.latest_blockhash(),
     );
     litesvm.send_transaction(cancel_first_tx).assert_ok();
-    let first_expiry = VNextSubscription::load(&litesvm.get_account(&subscription).unwrap().data)
-        .unwrap()
-        .expires_at_ts;
+    let first_subscription_account = litesvm.get_account(&subscription).unwrap();
+    let first_expiry = VNextSubscription::load(&first_subscription_account.data).unwrap().expires_at_ts;
 
     // Retain an obsolete Resume approval at revision 2/nonce 2. Use a
     // different bounded deadline for the valid Resume below so both signed
@@ -1153,9 +1152,8 @@ fn vnext_stale_cancel_now_and_resume_cannot_survive_same_timestamp_aba() {
         litesvm.latest_blockhash(),
     );
     litesvm.send_transaction(cancel_second_tx).assert_ok();
-    let second_expiry = VNextSubscription::load(&litesvm.get_account(&subscription).unwrap().data)
-        .unwrap()
-        .expires_at_ts;
+    let second_subscription_account = litesvm.get_account(&subscription).unwrap();
+    let second_expiry = VNextSubscription::load(&second_subscription_account.data).unwrap().expires_at_ts;
     assert_eq!(first_expiry, second_expiry, "test must exercise same-timestamp cancellation ABA");
 
     // The old Resume must fail because its revision/nonce belongs to the
@@ -1249,10 +1247,12 @@ fn vnext_stale_cancel_now_and_resume_cannot_survive_same_timestamp_aba() {
         .send_transaction(stale_cancel_now_replay)
         .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
 
-    let lifecycle = SubscriptionLifecycleRegistry::load(&litesvm.get_account(&lifecycle_registry).unwrap().data).unwrap();
+    let lifecycle_account = litesvm.get_account(&lifecycle_registry).unwrap();
+    let lifecycle = SubscriptionLifecycleRegistry::load(&lifecycle_account.data).unwrap();
     assert_eq!(lifecycle.revision, 6);
     assert_eq!(lifecycle.action_nonce, 6);
-    let current_subscription = VNextSubscription::load(&litesvm.get_account(&subscription).unwrap().data).unwrap();
+    let current_subscription_account = litesvm.get_account(&subscription).unwrap();
+    let current_subscription = VNextSubscription::load(&current_subscription_account.data).unwrap();
     assert_eq!(current_subscription.lifecycle_revision, 6);
     assert_eq!(current_subscription.expires_at_ts, 0);
 }

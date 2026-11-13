@@ -111,7 +111,7 @@ export class SquadsSmartWallet implements SmartWallet {
             transactionIndex,
             creator: creator.publicKey,
             rentPayer: this.feePayer.publicKey,
-            signers: [creator],
+            signers: creator.publicKey.equals(this.feePayer.publicKey) ? [] : [creator],
             vaultIndex: this.vaultIndex,
             ephemeralSigners: 0,
             transactionMessage: message,

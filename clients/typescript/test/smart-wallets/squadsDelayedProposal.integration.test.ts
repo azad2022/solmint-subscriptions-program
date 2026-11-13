@@ -69,6 +69,35 @@ async function readClockTimestamp(connection: Connection): Promise<bigint> {
     return clock.data.readBigInt64LE(32);
 }
 
+async function advanceClockPast(
+    connection: Connection,
+    feePayer: Keypair,
+    deadline: bigint,
+): Promise<bigint> {
+    const recipient = Keypair.generate().publicKey;
+    const stopAt = Date.now() + 30_000;
+    let current = await readClockTimestamp(connection);
+
+    while (current <= deadline && Date.now() < stopAt) {
+        const transaction = new Transaction().add(
+            SystemProgram.transfer({
+                fromPubkey: feePayer.publicKey,
+                toPubkey: recipient,
+                lamports: 1,
+            }),
+        );
+        await sendAndConfirmTransaction(connection, transaction, [feePayer]);
+        current = await readClockTimestamp(connection);
+    }
+
+    if (current <= deadline) {
+        throw new Error(
+            `SURFPOOL_CLOCK_DID_NOT_ADVANCE_PAST_DEADLINE: current=${current}; deadline=${deadline}`,
+        );
+    }
+    return current;
+}
+
 async function createMintAndVaultOwnedSourceAccount(
     connection: Connection,
     feePayer: Keypair,
@@ -314,6 +343,116 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
             expect(new PublicKey(tokenAccountInfo!.data.subarray(32, 64)).equals(vault)).toBe(true);
             expect(tokenAccountInfo!.data.readBigUInt64LE(64)).toBe(INITIAL_TOKEN_AMOUNT);
             expect(tokenAccountInfo!.data.readUInt32LE(72)).toBe(0); // no delegate
+        },
+        240_000,
+    );
+
+    it(
+        'rejects an approved delayed authorization after its on-chain deadline expires',
+        async () => {
+            const feePayer = Keypair.generate();
+            const members = [Keypair.generate(), Keypair.generate(), Keypair.generate()];
+            await airdrop(connection, feePayer.publicKey, 10 * LAMPORTS_PER_SOL);
+            for (const member of members) {
+                await airdrop(connection, member.publicKey, LAMPORTS_PER_SOL);
+            }
+
+            const wallet = await createSquadsWallet({
+                connection,
+                feePayer,
+                members,
+                approvalsRequired: 2,
+                vaultIndex: 0,
+            });
+            const vault = new PublicKey(wallet.address);
+            await airdrop(connection, vault, 5 * LAMPORTS_PER_SOL);
+
+            const { mint, source } = await createMintAndVaultOwnedSourceAccount(
+                connection,
+                feePayer,
+                vault,
+            );
+            const [registryPda] = PublicKey.findProgramAddressSync(
+                [
+                    Buffer.from('authorityConsent'),
+                    vault.toBuffer(),
+                    mint.publicKey.toBuffer(),
+                    source.publicKey.toBuffer(),
+                ],
+                SUBSCRIPTIONS_PROGRAM_ID,
+            );
+            const [authorityPda] = PublicKey.findProgramAddressSync(
+                [
+                    Buffer.from('SubscriptionAuthorityVNext'),
+                    vault.toBuffer(),
+                    mint.publicKey.toBuffer(),
+                    source.publicKey.toBuffer(),
+                ],
+                SUBSCRIPTIONS_PROGRAM_ID,
+            );
+
+            const now = await readClockTimestamp(connection);
+            const deadline = now + 1n;
+            const authorizeInstruction = new TransactionInstruction({
+                programId: SUBSCRIPTIONS_PROGRAM_ID,
+                keys: [
+                    { pubkey: vault, isSigner: true, isWritable: true },
+                    { pubkey: registryPda, isSigner: false, isWritable: true },
+                    { pubkey: authorityPda, isSigner: false, isWritable: true },
+                    { pubkey: mint.publicKey, isSigner: false, isWritable: false },
+                    { pubkey: source.publicKey, isSigner: false, isWritable: true },
+                    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+                    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+                ],
+                data: encodeAuthorityAction(18, 0n, 0n, deadline),
+            });
+
+            const delayedAuthorize = await wallet.stageInstructions([
+                toKitInstruction(authorizeInstruction),
+            ]);
+            await wallet.approveProposal(delayedAuthorize);
+
+            const current = await advanceClockPast(connection, feePayer, deadline);
+            expect(current).toBeGreaterThan(deadline);
+
+            const staleSignature = await wallet.executeProposal(
+                delayedAuthorize,
+                members[0],
+                { skipPreflight: true },
+            );
+            const confirmation = await connection.confirmTransaction(
+                staleSignature,
+                'confirmed',
+            );
+            expect(confirmation.value.err).not.toBeNull();
+
+            const failedTransaction = await connection.getTransaction(staleSignature, {
+                commitment: 'confirmed',
+                maxSupportedTransactionVersion: 0,
+            });
+            expect(failedTransaction?.meta?.err).not.toBeNull();
+            expect(JSON.stringify(failedTransaction?.meta?.err)).toContain('143');
+            expect((failedTransaction?.meta?.logMessages ?? []).join('\\n')).toContain(
+                'custom program error: 0x8f',
+            );
+
+            const [proposalPda] = squads.getProposalPda({
+                multisigPda: new PublicKey(delayedAuthorize.multisigPda),
+                transactionIndex: delayedAuthorize.transactionIndex,
+            });
+            const stillApproved = await squads.accounts.Proposal.fromAccountAddress(
+                connection,
+                proposalPda,
+            );
+            expect(stillApproved.status.__kind).toBe('Approved');
+
+            expect(await connection.getAccountInfo(registryPda, 'confirmed')).toBeNull();
+            expect(await connection.getAccountInfo(authorityPda, 'confirmed')).toBeNull();
+
+            const tokenAccountInfo = await connection.getAccountInfo(source.publicKey, 'confirmed');
+            expect(tokenAccountInfo).not.toBeNull();
+            expect(tokenAccountInfo!.data.readBigUInt64LE(64)).toBe(INITIAL_TOKEN_AMOUNT);
+            expect(tokenAccountInfo!.data.readUInt32LE(72)).toBe(0);
         },
         240_000,
     );

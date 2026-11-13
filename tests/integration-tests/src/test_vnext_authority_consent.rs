@@ -551,12 +551,17 @@ fn vnext_durable_nonce_authorization_is_rejected_after_generation_invalidation()
     // VNext instruction, which must reject its stale expected generation.
     litesvm.send_transaction(durable_nonce_transaction).assert_err_at(1, SubscriptionsError::StaleAuthorityGeneration);
 
-    // Solana consumes a valid durable nonce even when a later instruction
-    // fails. The failed authorization must not restore that nonce or replay.
-    let consumed_nonce_hash = read_initialized_nonce_hash(litesvm, &nonce_account);
-    assert_ne!(consumed_nonce_hash, original_nonce_hash);
+    // LiteSVM 0.12.0 records included failed signatures but does not sync
+    // post_accounts after an instruction error. Therefore its nonce account
+    // remains unchanged here; real-validator failure semantics require a
+    // separate validator/Devnet proof and are not inferred from this harness.
+    let nonce_hash_after_failure = read_initialized_nonce_hash(litesvm, &nonce_account);
+    assert_eq!(nonce_hash_after_failure, original_nonce_hash);
+
+    // LiteSVM rejects this identical signature through transaction history;
+    // this is not evidence that the nonce account was consumed.
     assert!(litesvm.send_transaction(durable_nonce_replay).is_err());
-    assert_eq!(read_initialized_nonce_hash(litesvm, &nonce_account), consumed_nonce_hash);
+    assert_eq!(read_initialized_nonce_hash(litesvm, &nonce_account), nonce_hash_after_failure);
 
     let final_registry_account = litesvm.get_account(&registry).unwrap();
     let final_registry = AuthorityConsentRegistry::load(&final_registry_account.data).unwrap();
@@ -596,10 +601,17 @@ fn vnext_durable_nonce_authorization_is_rejected_after_onchain_deadline() {
 
     litesvm.send_transaction(durable_nonce_transaction).assert_err_at(1, SubscriptionsError::AuthorityActionExpired);
 
-    let consumed_nonce_hash = read_initialized_nonce_hash(litesvm, &nonce_account);
-    assert_ne!(consumed_nonce_hash, original_nonce_hash);
+    // LiteSVM 0.12.0 records included failed signatures but does not sync
+    // post_accounts after an instruction error. Therefore its nonce account
+    // remains unchanged here; real-validator failure semantics require a
+    // separate validator/Devnet proof and are not inferred from this harness.
+    let nonce_hash_after_failure = read_initialized_nonce_hash(litesvm, &nonce_account);
+    assert_eq!(nonce_hash_after_failure, original_nonce_hash);
+
+    // LiteSVM rejects this identical signature through transaction history;
+    // this is not evidence that the nonce account was consumed.
     assert!(litesvm.send_transaction(durable_nonce_replay).is_err());
-    assert_eq!(read_initialized_nonce_hash(litesvm, &nonce_account), consumed_nonce_hash);
+    assert_eq!(read_initialized_nonce_hash(litesvm, &nonce_account), nonce_hash_after_failure);
 
     assert!(litesvm.get_account(&registry).is_none());
     assert!(litesvm.get_account(&authority).is_none());
@@ -607,4 +619,32 @@ fn vnext_durable_nonce_authorization_is_rejected_after_onchain_deadline() {
     assert!(source_state.delegate.is_none());
     assert_eq!(source_state.delegated_amount, 0);
     assert_eq!(source_state.amount, 1_000_000);
+}
+
+#[test]
+fn vnext_durable_nonce_advance_persists_on_success_and_rejects_replay() {
+    let (litesvm, subscriber) = &mut setup();
+    let nonce_authority = Keypair::new();
+    let nonce_account = create_initialized_nonce_account(litesvm, subscriber, &nonce_authority);
+    let original_nonce_hash = read_initialized_nonce_hash(litesvm, &nonce_account);
+
+    let advance = advance_nonce_account(&nonce_account, &nonce_authority.pubkey());
+    let transaction = Transaction::new(
+        &[&*subscriber, &nonce_authority],
+        Message::new(std::slice::from_ref(&advance), Some(&subscriber.pubkey())),
+        original_nonce_hash,
+    );
+    let replay = transaction.clone();
+
+    // Expiring the ordinary blockhash must not invalidate a transaction
+    // whose message is backed by the current on-chain nonce value.
+    litesvm.expire_blockhash();
+    litesvm.send_transaction(transaction).assert_ok();
+
+    let advanced_nonce_hash = read_initialized_nonce_hash(litesvm, &nonce_account);
+    assert_ne!(advanced_nonce_hash, original_nonce_hash);
+
+    // After a successful advance, the old nonce value is no longer valid.
+    assert!(litesvm.send_transaction(replay).is_err());
+    assert_eq!(read_initialized_nonce_hash(litesvm, &nonce_account), advanced_nonce_hash);
 }

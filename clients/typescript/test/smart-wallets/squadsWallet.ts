@@ -1,6 +1,7 @@
 import type { Address, Instruction } from '@solana/kit';
 import {
     type Connection,
+    type SendOptions,
     Keypair,
     LAMPORTS_PER_SOL,
     PublicKey,
@@ -11,6 +12,28 @@ import {
 import * as squads from '@sqds/multisig';
 import type { SmartWallet } from './SmartWallet.ts';
 import { toWeb3Instruction } from './utils.ts';
+
+async function confirmSignature(
+    connection: Connection,
+    signature: string,
+    operation: string,
+): Promise<void> {
+    let confirmation;
+    try {
+        confirmation = await connection.confirmTransaction(signature, 'confirmed');
+    } catch (error) {
+        throw new Error(
+            `SQUADS_${operation}_CONFIRMATION_UNKNOWN: signature=${signature}; reconcile on-chain state before retrying`,
+            { cause: error },
+        );
+    }
+
+    if (confirmation.value.err) {
+        throw new Error(
+            `SQUADS_${operation}_FAILED: signature=${signature}; error=${JSON.stringify(confirmation.value.err)}`,
+        );
+    }
+}
 
 type SquadsWalletConfig = {
     connection: Connection;
@@ -104,7 +127,7 @@ export class SquadsSmartWallet implements SmartWallet {
             instructions: instructions.map(toWeb3Instruction),
         });
 
-        await squads.rpc.vaultTransactionCreate({
+        const vaultTransactionSignature = await squads.rpc.vaultTransactionCreate({
             connection: this.connection,
             feePayer: this.feePayer,
             multisigPda: this.multisigPda,
@@ -117,9 +140,14 @@ export class SquadsSmartWallet implements SmartWallet {
             transactionMessage: message,
             programId: this.programId,
         });
+        await confirmSignature(
+            this.connection,
+            vaultTransactionSignature,
+            `VAULT_TRANSACTION_CREATE_${transactionIndex}`,
+        );
 
         try {
-            await squads.rpc.proposalCreate({
+            const proposalSignature = await squads.rpc.proposalCreate({
                 connection: this.connection,
                 feePayer: this.feePayer,
                 creator,
@@ -128,6 +156,11 @@ export class SquadsSmartWallet implements SmartWallet {
                 isDraft: false,
                 programId: this.programId,
             });
+            await confirmSignature(
+                this.connection,
+                proposalSignature,
+                `PROPOSAL_CREATE_${transactionIndex}`,
+            );
         } catch (error) {
             throw new Error(
                 `SQUADS_PROPOSAL_CREATE_FAILED: vault transaction ${transactionIndex} may already exist; reconcile on-chain state before retrying`,
@@ -156,7 +189,7 @@ export class SquadsSmartWallet implements SmartWallet {
             if (seen.has(address)) throw new Error('SQUADS_PROPOSAL_DUPLICATE_APPROVER');
             seen.add(address);
 
-            await squads.rpc.proposalApprove({
+            const signature = await squads.rpc.proposalApprove({
                 connection: this.connection,
                 feePayer: this.feePayer,
                 member,
@@ -164,6 +197,11 @@ export class SquadsSmartWallet implements SmartWallet {
                 transactionIndex: proposal.transactionIndex,
                 programId: this.programId,
             });
+            await confirmSignature(
+                this.connection,
+                signature,
+                `PROPOSAL_APPROVE_${proposal.transactionIndex}_${address}`,
+            );
         }
     }
 
@@ -171,6 +209,7 @@ export class SquadsSmartWallet implements SmartWallet {
     async executeProposal(
         proposal: StagedSquadsProposal,
         executor: Keypair = this.members[0],
+        sendOptions?: SendOptions,
     ): Promise<string> {
         this.assertProposalBelongsToWallet(proposal);
         if (!executor) throw new Error('SQUADS_MULTISIG_HAS_NO_EXECUTOR');
@@ -183,6 +222,7 @@ export class SquadsSmartWallet implements SmartWallet {
             transactionIndex: proposal.transactionIndex,
             member: executor.publicKey,
             signers: [executor],
+            sendOptions,
             programId: this.programId,
         });
     }
@@ -191,7 +231,13 @@ export class SquadsSmartWallet implements SmartWallet {
     async sendInstructions(instructions: Instruction[]): Promise<string> {
         const proposal = await this.stageInstructions(instructions);
         await this.approveProposal(proposal);
-        return this.executeProposal(proposal);
+        const signature = await this.executeProposal(proposal);
+        await confirmSignature(
+            this.connection,
+            signature,
+            `PROPOSAL_EXECUTE_${proposal.transactionIndex}`,
+        );
+        return signature;
     }
 }
 
@@ -257,7 +303,7 @@ export async function createSquadsWallet(config: SquadsWalletConfig): Promise<Sq
 
     const createKey = Keypair.generate();
     const airdropSig = await config.connection.requestAirdrop(createKey.publicKey, LAMPORTS_PER_SOL);
-    await config.connection.confirmTransaction(airdropSig, 'confirmed');
+    await confirmSignature(config.connection, airdropSig, 'CREATE_KEY_AIRDROP');
     const [multisigPda] = squads.getMultisigPda({
         createKey: createKey.publicKey,
         programId,
@@ -269,7 +315,7 @@ export async function createSquadsWallet(config: SquadsWalletConfig): Promise<Sq
     }));
 
     const creator = config.members[0];
-    await squads.rpc.multisigCreateV2({
+    const createSignature = await squads.rpc.multisigCreateV2({
         connection: config.connection,
         treasury,
         createKey,
@@ -282,6 +328,11 @@ export async function createSquadsWallet(config: SquadsWalletConfig): Promise<Sq
         rentCollector: null,
         programId,
     });
+    await confirmSignature(
+        config.connection,
+        createSignature,
+        `MULTISIG_CREATE_${multisigPda.toBase58()}`,
+    );
 
     return new SquadsSmartWallet({
         connection: config.connection,

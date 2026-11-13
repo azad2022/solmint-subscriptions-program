@@ -1,11 +1,11 @@
-use solana_instruction::{AccountMeta, Instruction};
 use solana_hash::Hash;
+use solana_instruction::{AccountMeta, Instruction};
 use solana_keypair::Keypair;
-use solana_nonce::{state::State as NonceState, versions::Versions as NonceVersions};
-use solana_system_interface::instruction::{advance_nonce_account, create_nonce_account};
 use solana_message::Message;
+use solana_nonce::{state::State as NonceState, versions::Versions as NonceVersions};
 use solana_pubkey::Pubkey;
 use solana_signer::Signer;
+use solana_system_interface::instruction::{advance_nonce_account, create_nonce_account};
 use solana_transaction::Transaction;
 use spl_token_2022_interface::state::Account as TokenAccount;
 
@@ -19,7 +19,6 @@ use crate::{
     AUTHORITY_REGISTRY_REVOKED,
 };
 
-
 fn create_initialized_nonce_account(
     litesvm: &mut litesvm::LiteSVM,
     payer: &Keypair,
@@ -27,12 +26,8 @@ fn create_initialized_nonce_account(
 ) -> Pubkey {
     let nonce_account = Keypair::new();
     let nonce_lamports = litesvm.minimum_balance_for_rent_exemption(NonceState::size());
-    let create_instructions = create_nonce_account(
-        &payer.pubkey(),
-        &nonce_account.pubkey(),
-        &nonce_authority.pubkey(),
-        nonce_lamports,
-    );
+    let create_instructions =
+        create_nonce_account(&payer.pubkey(), &nonce_account.pubkey(), &nonce_authority.pubkey(), nonce_lamports);
     let create_transaction = Transaction::new(
         &[payer, &nonce_account],
         Message::new(&create_instructions, Some(&payer.pubkey())),
@@ -68,10 +63,7 @@ fn sign_durable_nonce_authorization(
     nonce_hash: Hash,
     authorize: &Instruction,
 ) -> Transaction {
-    let instructions = [
-        advance_nonce_account(nonce_account, &nonce_authority.pubkey()),
-        authorize.clone(),
-    ];
+    let instructions = [advance_nonce_account(nonce_account, &nonce_authority.pubkey()), authorize.clone()];
     assert_eq!(instructions[0].program_id, SYSTEM_PROGRAM_ID);
     Transaction::new(
         &[subscriber, nonce_authority],
@@ -500,7 +492,6 @@ fn vnext_authority_consent_rejects_multiple_remaining_accounts_atomically() {
     assert_eq!(source_after_failed_revoke.delegated_amount, u64::MAX);
 }
 
-
 #[test]
 fn vnext_durable_nonce_authorization_is_rejected_after_generation_invalidation() {
     let (litesvm, subscriber) = &mut setup();
@@ -512,16 +503,7 @@ fn vnext_durable_nonce_authorization_is_rejected_after_generation_invalidation()
     let nonce_account = create_initialized_nonce_account(litesvm, subscriber, &nonce_authority);
     let original_nonce_hash = read_initialized_nonce_hash(litesvm, &nonce_account);
     let deadline = crate::tests::utils::current_ts() + 3_600;
-    let authorize = authorize_ix(
-        &subscriber.pubkey(),
-        registry,
-        authority,
-        mint,
-        source,
-        0,
-        0,
-        deadline,
-    );
+    let authorize = authorize_ix(&subscriber.pubkey(), registry, authority, mint, source, 0, 0, deadline);
 
     // Retain both a regular-blockhash transaction and a genuine durable-nonce
     // transaction before the subscriber invalidates the Authority generation.
@@ -530,13 +512,8 @@ fn vnext_durable_nonce_authorization_is_rejected_after_generation_invalidation()
         Message::new(std::slice::from_ref(&authorize), Some(&subscriber.pubkey())),
         litesvm.latest_blockhash(),
     );
-    let durable_nonce_transaction = sign_durable_nonce_authorization(
-        subscriber,
-        &nonce_authority,
-        &nonce_account,
-        original_nonce_hash,
-        &authorize,
-    );
+    let durable_nonce_transaction =
+        sign_durable_nonce_authorization(subscriber, &nonce_authority, &nonce_account, original_nonce_hash, &authorize);
     let durable_nonce_replay = durable_nonce_transaction.clone();
     let signing_slot = litesvm.get_sysvar::<solana_clock::Clock>().slot;
 
@@ -570,9 +547,7 @@ fn vnext_durable_nonce_authorization_is_rejected_after_generation_invalidation()
 
     // The nonce transaction passes runtime nonce validation and reaches the
     // VNext instruction, which must reject its stale expected generation.
-    litesvm
-        .send_transaction(durable_nonce_transaction)
-        .assert_err_at(1, SubscriptionsError::StaleAuthorityGeneration);
+    litesvm.send_transaction(durable_nonce_transaction).assert_err_at(1, SubscriptionsError::StaleAuthorityGeneration);
 
     // Solana consumes a valid durable nonce even when a later instruction
     // fails. The failed authorization must not restore that nonce or replay.
@@ -628,9 +603,7 @@ fn vnext_durable_nonce_authorization_is_rejected_after_onchain_deadline() {
     crate::tests::utils::set_clock(litesvm, deadline + 1);
     assert!(litesvm.get_sysvar::<solana_clock::Clock>().unix_timestamp > deadline);
 
-    litesvm
-        .send_transaction(durable_nonce_transaction)
-        .assert_err_at(1, SubscriptionsError::AuthorityActionExpired);
+    litesvm.send_transaction(durable_nonce_transaction).assert_err_at(1, SubscriptionsError::AuthorityActionExpired);
 
     let consumed_nonce_hash = read_initialized_nonce_hash(litesvm, &nonce_account);
     assert_ne!(consumed_nonce_hash, original_nonce_hash);

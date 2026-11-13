@@ -291,7 +291,6 @@ fn vnext_authorize_rejects_ata_source_account() {
         .assert_err(SubscriptionsError::NonAssociatedSourceAccountRequired);
 }
 
-
 #[test]
 fn vnext_authority_consent_is_bound_to_exact_non_ata_source_account() {
     let (litesvm, subscriber) = &mut setup();
@@ -306,16 +305,7 @@ fn vnext_authority_consent_is_bound_to_exact_non_ata_source_account() {
     assert_ne!(authority_a, authority_b);
 
     let deadline = crate::tests::utils::current_ts() + 3_600;
-    let authorize_a = authorize_ix(
-        &subscriber.pubkey(),
-        registry_a,
-        authority_a,
-        mint,
-        source_a,
-        0,
-        0,
-        deadline,
-    );
+    let authorize_a = authorize_ix(&subscriber.pubkey(), registry_a, authority_a, mint, source_a, 0, 0, deadline);
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize_a).assert_ok();
 
     let source_a_state = fetch_account::<TokenAccount>(litesvm, &source_a);
@@ -325,43 +315,18 @@ fn vnext_authority_consent_is_bound_to_exact_non_ata_source_account() {
     assert!(litesvm.get_account(&authority_b).is_none());
 
     // A Registry for source B cannot be paired with source A's Authority.
-    let cross_bound_authorize = authorize_ix(
-        &subscriber.pubkey(),
-        registry_b,
-        authority_a,
-        mint,
-        source_b,
-        0,
-        0,
-        deadline,
-    );
+    let cross_bound_authorize =
+        authorize_ix(&subscriber.pubkey(), registry_b, authority_a, mint, source_b, 0, 0, deadline);
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &cross_bound_authorize)
         .assert_err(SubscriptionsError::VNextAuthorityInvalidPda);
 
     // Source A's Registry cannot be replayed against source B, including for revoke.
-    let substituted_authorize = authorize_ix(
-        &subscriber.pubkey(),
-        registry_a,
-        authority_a,
-        mint,
-        source_b,
-        0,
-        0,
-        deadline,
-    );
+    let substituted_authorize =
+        authorize_ix(&subscriber.pubkey(), registry_a, authority_a, mint, source_b, 0, 0, deadline);
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &substituted_authorize)
         .assert_err(SubscriptionsError::AuthorityConsentRegistryInvalidPda);
 
-    let substituted_revoke = revoke_ix(
-        &subscriber.pubkey(),
-        registry_a,
-        authority_a,
-        mint,
-        source_b,
-        1,
-        0,
-        deadline,
-    );
+    let substituted_revoke = revoke_ix(&subscriber.pubkey(), registry_a, authority_a, mint, source_b, 1, 0, deadline);
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &substituted_revoke)
         .assert_err(SubscriptionsError::AuthorityConsentRegistryInvalidPda);
 
@@ -373,16 +338,7 @@ fn vnext_authority_consent_is_bound_to_exact_non_ata_source_account() {
 
     // The second source can be authorized independently; revoking A must not
     // revoke B because the persistent consent lineage is tuple-bound.
-    let authorize_b = authorize_ix(
-        &subscriber.pubkey(),
-        registry_b,
-        authority_b,
-        mint,
-        source_b,
-        0,
-        0,
-        deadline,
-    );
+    let authorize_b = authorize_ix(&subscriber.pubkey(), registry_b, authority_b, mint, source_b, 0, 0, deadline);
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize_b).assert_ok();
 
     let revoke_a = revoke_ix(
@@ -418,7 +374,6 @@ fn vnext_authority_consent_is_bound_to_exact_non_ata_source_account() {
     assert_eq!(registry_b_status, AUTHORITY_REGISTRY_ACTIVE);
 }
 
-
 #[test]
 fn vnext_authority_consent_rejects_multiple_remaining_accounts_atomically() {
     let (litesvm, subscriber) = &mut setup();
@@ -431,16 +386,7 @@ fn vnext_authority_consent_rejects_multiple_remaining_accounts_atomically() {
 
     // More than one trailing account must be rejected before Registry,
     // Authority, or token-delegate state is initialized.
-    let mut malformed_authorize = authorize_ix(
-        &subscriber.pubkey(),
-        registry,
-        authority,
-        mint,
-        source,
-        0,
-        0,
-        deadline,
-    );
+    let mut malformed_authorize = authorize_ix(&subscriber.pubkey(), registry, authority, mint, source, 0, 0, deadline);
     malformed_authorize.accounts.push(AccountMeta::new_readonly(extra_a.pubkey(), false));
     malformed_authorize.accounts.push(AccountMeta::new_readonly(extra_b.pubkey(), false));
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &malformed_authorize)
@@ -454,16 +400,7 @@ fn vnext_authority_consent_rejects_multiple_remaining_accounts_atomically() {
 
     // A malformed Revoke must not advance the Registry or remove an existing
     // delegate. The same exact one-account tail policy applies to both paths.
-    let authorize = authorize_ix(
-        &subscriber.pubkey(),
-        registry,
-        authority,
-        mint,
-        source,
-        0,
-        0,
-        deadline,
-    );
+    let authorize = authorize_ix(&subscriber.pubkey(), registry, authority, mint, source, 0, 0, deadline);
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize).assert_ok();
 
     let mut malformed_revoke = revoke_ix(

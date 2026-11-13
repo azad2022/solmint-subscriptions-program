@@ -868,7 +868,8 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
     assert!(legacy_revoke.is_ok(), "legacy RevokeSubscription control case must remain operational");
     let revoked_subscription = litesvm.get_account(&legacy_subscription);
     assert!(
-        revoked_subscription.is_none() || revoked_subscription.as_ref().map(|account| account.lamports).unwrap_or(0) == 0
+        revoked_subscription.is_none()
+            || revoked_subscription.as_ref().map(|account| account.lamports).unwrap_or(0) == 0
     );
 
     // Positive recovery control: resubscribe, close the subscriber Authority, advance beyond

@@ -876,10 +876,12 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
     assert!(resubscribe.is_ok(), "legacy resubscribe control must remain operational");
 
     let subscription_rent = litesvm.get_account(&legacy_subscription).unwrap().lamports;
-    let subscriber_balance_before_recovery = litesvm.get_account(&subscriber.pubkey()).unwrap().lamports;
     let close_authority = CloseSubscriptionAuthority::new(&mut litesvm, &subscriber, mint).execute();
     assert!(close_authority.is_ok(), "legacy SubscriptionAuthority close control must remain operational");
     advance_slots(&mut litesvm, 1);
+    // Snapshot after Authority rent has already been returned, so this assertion
+    // isolates the rent refunded by the abandoned-Subscription recovery itself.
+    let subscriber_balance_before_recovery = litesvm.get_account(&subscriber.pubkey()).unwrap().lamports;
 
     let abandoned_recovery =
         RevokeAbandonedSubscription::new(&mut litesvm, &subscriber, subscriber.pubkey(), mint, legacy_plan).execute();

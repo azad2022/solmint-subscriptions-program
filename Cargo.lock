@@ -5550,6 +5550,7 @@ dependencies = [
 name = "tests-subscriptions"
 version = "0.5.0-beta.1"
 dependencies = [
+ "bincode",
  "dtor",
  "litesvm",
  "litesvm-token",
@@ -5562,13 +5563,16 @@ dependencies = [
  "serde_json",
  "solana-account",
  "solana-clock",
+ "solana-hash 4.3.0",
  "solana-instruction",
  "solana-keypair",
  "solana-message",
  "solana-native-token",
+ "solana-nonce",
  "solana-program-pack",
  "solana-pubkey 4.2.0",
  "solana-signer",
+ "solana-system-interface 3.2.0",
  "solana-transaction",
  "solana-transaction-error",
  "spl-associated-token-account-interface",

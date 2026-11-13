@@ -69,6 +69,18 @@ pub enum AccountDiscriminator {
     RecurringDelegation = 3,
     /// [`SubscriptionDelegation`](super::subscription_delegation::SubscriptionDelegation) account.
     SubscriptionDelegation = 4,
+    /// Persistent generation and nonce state for an Authority consent lineage.
+    AuthorityConsentRegistry = 5,
+    /// Persistent lifecycle revision for a logical Plan/subscriber pair.
+    SubscriptionLifecycleRegistry = 6,
+    /// Persistent administration revision for a Plan PDA.
+    PlanRevisionRegistry = 7,
+    /// Token-delegate Authority bound to a VNext source-account consent lineage.
+    VNextSubscriptionAuthority = 8,
+    /// Independent VNext Plan account; not layout-compatible with legacy Plan.
+    VNextPlan = 9,
+    /// Independent source-account-bound VNext Subscription account.
+    VNextSubscription = 10,
 }
 
 impl TryFrom<u8> for AccountDiscriminator {
@@ -80,6 +92,12 @@ impl TryFrom<u8> for AccountDiscriminator {
             2 => Ok(Self::FixedDelegation),
             3 => Ok(Self::RecurringDelegation),
             4 => Ok(Self::SubscriptionDelegation),
+            5 => Ok(Self::AuthorityConsentRegistry),
+            6 => Ok(Self::SubscriptionLifecycleRegistry),
+            7 => Ok(Self::PlanRevisionRegistry),
+            8 => Ok(Self::VNextSubscriptionAuthority),
+            9 => Ok(Self::VNextPlan),
+            10 => Ok(Self::VNextSubscription),
             _ => Err(SubscriptionsError::InvalidAccountDiscriminator.into()),
         }
     }
@@ -93,6 +111,12 @@ impl From<AccountDiscriminator> for u8 {
             AccountDiscriminator::FixedDelegation => 2,
             AccountDiscriminator::RecurringDelegation => 3,
             AccountDiscriminator::SubscriptionDelegation => 4,
+            AccountDiscriminator::AuthorityConsentRegistry => 5,
+            AccountDiscriminator::SubscriptionLifecycleRegistry => 6,
+            AccountDiscriminator::PlanRevisionRegistry => 7,
+            AccountDiscriminator::VNextSubscriptionAuthority => 8,
+            AccountDiscriminator::VNextPlan => 9,
+            AccountDiscriminator::VNextSubscription => 10,
         }
     }
 }

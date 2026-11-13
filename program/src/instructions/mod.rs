@@ -4,6 +4,8 @@
 //! instruction data) and, where applicable, an inline data payload. The Codama
 //! annotations on each variant describe the required accounts.
 
+pub mod authority_consent;
+pub mod authorize_subscription_authority_vnext;
 pub mod cancel_subscription;
 pub mod cancel_subscription_now;
 pub mod close_subscription_authority;
@@ -14,6 +16,8 @@ pub mod create_recurring_delegation;
 pub mod delete_plan;
 pub mod subscribe;
 pub mod update_plan;
+pub mod vnext_plan;
+pub mod vnext_subscription;
 pub use create_recurring_delegation::CreateRecurringDelegationData;
 pub mod emit_event;
 pub mod helpers;
@@ -23,6 +27,7 @@ pub mod revoke_abandoned_delegation;
 pub mod revoke_abandoned_subscription;
 pub mod revoke_delegation;
 pub mod revoke_subscription_authority;
+pub mod revoke_subscription_authority_vnext;
 pub mod transfer_fixed_delegation;
 pub mod transfer_recurring_delegation;
 pub mod transfer_subscription;
@@ -41,6 +46,9 @@ use crate::instructions::resume_subscription::ResumeData;
 use crate::instructions::subscribe::SubscribeData;
 use crate::instructions::update_plan::UpdatePlanData;
 use crate::SubscriptionsError;
+pub use authority_consent::AuthorityActionData;
+pub use vnext_plan::{VNextCreatePlanData, VNextPlanUpdateData};
+pub use vnext_subscription::{RevisionActionData, VNextSubscribeData, VNextTransferData, VNextTransferV2Data};
 
 /// All instructions supported by the subscriptions program.
 ///
@@ -394,6 +402,192 @@ pub enum SubscriptionsInstruction {
     ))]
     CancelSubscriptionNow(#[codama(name = "cancel_subscription_now_data")] CancelSubscriptionNowData) = 17,
 
+    #[codama(account(
+        name = "subscriber",
+        signer,
+        writable,
+        docs = "The subscriber who authorizes the exact source token account"
+    ))]
+    #[codama(account(
+        name = "registry",
+        writable,
+        docs = "Persistent Authority Consent Registry keyed by subscriber, mint and source account",
+        default_value = pda("authorityConsentRegistry", [seed("subscriber", account("subscriber")), seed("mint", account("token_mint")), seed("sourceTokenAccount", account("source_token_account"))])
+    ))]
+    #[codama(account(
+        name = "authority",
+        writable,
+        docs = "VNext token-delegate Authority for the exact source account",
+        default_value = pda("vnextSubscriptionAuthority", [seed("subscriber", account("subscriber")), seed("mint", account("token_mint")), seed("sourceTokenAccount", account("source_token_account"))])
+    ))]
+    #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
+    #[codama(account(name = "source_token_account", writable, docs = "Customer-owned non-ATA token account"))]
+    #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
+    #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
+    #[codama(account(
+        name = "payer",
+        signer,
+        writable,
+        optional,
+        docs = "Optional sponsor for the closeable VNext Authority account; the subscriber funds the permanent Registry"
+    ))]
+    #[codama(optional_account_strategy = omitted)]
+    AuthorizeSubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 18,
+
+    #[codama(account(
+        name = "subscriber",
+        signer,
+        writable,
+        docs = "The subscriber invalidating the VNext Authority consent"
+    ))]
+    #[codama(account(
+        name = "registry",
+        writable,
+        docs = "Persistent Authority Consent Registry keyed by subscriber, mint and source account",
+        default_value = pda("authorityConsentRegistry", [seed("subscriber", account("subscriber")), seed("mint", account("token_mint")), seed("sourceTokenAccount", account("source_token_account"))])
+    ))]
+    #[codama(account(
+        name = "authority",
+        writable,
+        docs = "VNext token-delegate Authority; may be absent for a tombstone invalidation",
+        default_value = pda("vnextSubscriptionAuthority", [seed("subscriber", account("subscriber")), seed("mint", account("token_mint")), seed("sourceTokenAccount", account("source_token_account"))])
+    ))]
+    #[codama(account(name = "token_mint", docs = "Mint used as part of the Registry identity"))]
+    #[codama(account(
+        name = "source_token_account",
+        writable,
+        docs = "Exact source account; may be closed for tombstone-only invalidation"
+    ))]
+    #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
+    #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
+    #[codama(account(
+        name = "receiver",
+        writable,
+        optional,
+        docs = "Required when closing a sponsored Authority; must match its recorded rent payer"
+    ))]
+    #[codama(optional_account_strategy = omitted)]
+    RevokeSubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 19,
+
+    #[codama(account(name = "merchant", signer, writable, docs = "Merchant creating the independent VNext Plan"))]
+    #[codama(account(name = "plan_pda", writable, docs = "VNext Plan PDA"))]
+    #[codama(account(name = "plan_revision_registry", writable, docs = "Permanent Plan revision lineage"))]
+    #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
+    #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
+    #[codama(account(name = "token_program", docs = "Token program that owns the Plan mint"))]
+    CreatePlanVNext(#[codama(name = "create_plan_data")] VNextCreatePlanData) = 20,
+
+    #[codama(account(name = "merchant", signer, docs = "VNext Plan owner"))]
+    #[codama(account(name = "plan_pda", writable, docs = "VNext Plan PDA"))]
+    #[codama(account(name = "plan_revision_registry", writable, docs = "Permanent Plan revision lineage"))]
+    #[codama(account(name = "event_authority", docs = "Event authority PDA", default_value = pda("eventAuthority")))]
+    #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
+    UpdatePlanVNext(#[codama(name = "plan_update_data")] VNextPlanUpdateData) = 21,
+
+    #[codama(account(
+        name = "subscriber",
+        signer,
+        writable,
+        docs = "Customer consenting to the exact source account"
+    ))]
+    #[codama(account(name = "merchant", docs = "Merchant who owns the VNext Plan"))]
+    #[codama(account(name = "plan_pda", docs = "VNext Plan PDA"))]
+    #[codama(account(name = "plan_revision_registry", docs = "Permanent Plan revision lineage"))]
+    #[codama(account(
+        name = "subscription_pda",
+        writable,
+        docs = "VNext Subscription PDA keyed by exact source token account"
+    ))]
+    #[codama(account(
+        name = "lifecycle_registry",
+        writable,
+        docs = "Permanent Subscription lifecycle revision lineage"
+    ))]
+    #[codama(account(name = "consent_registry", docs = "Permanent Authority Consent Registry"))]
+    #[codama(account(name = "authority", docs = "Tuple-bound VNext token delegate Authority"))]
+    #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
+    #[codama(account(name = "source_token_account", writable, docs = "Customer-owned non-ATA source account"))]
+    #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
+    #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
+    #[codama(account(name = "event_authority", docs = "Event authority PDA", default_value = pda("eventAuthority")))]
+    #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
+    SubscribeVNext(#[codama(name = "subscribe_data")] VNextSubscribeData) = 22,
+
+    #[codama(account(name = "subscriber", signer, docs = "Subscriber cancelling the VNext Subscription"))]
+    #[codama(account(name = "plan_pda", docs = "VNext Plan"))]
+    #[codama(account(name = "plan_revision_registry", docs = "Permanent Plan revision lineage"))]
+    #[codama(account(name = "subscription_pda", writable, docs = "VNext Subscription"))]
+    #[codama(account(
+        name = "lifecycle_registry",
+        writable,
+        docs = "Permanent Subscription lifecycle revision lineage"
+    ))]
+    #[codama(account(name = "event_authority", docs = "Event authority PDA", default_value = pda("eventAuthority")))]
+    #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
+    CancelSubscriptionVNext(#[codama(name = "action_data")] RevisionActionData) = 23,
+
+    #[codama(account(name = "subscriber", signer, docs = "Subscriber requesting immediate cancellation"))]
+    #[codama(account(name = "merchant", signer, docs = "Current VNext Plan owner approving immediate cancellation"))]
+    #[codama(account(name = "plan_pda", docs = "VNext Plan"))]
+    #[codama(account(name = "plan_revision_registry", docs = "Permanent Plan revision lineage"))]
+    #[codama(account(name = "subscription_pda", writable, docs = "VNext Subscription"))]
+    #[codama(account(
+        name = "lifecycle_registry",
+        writable,
+        docs = "Permanent Subscription lifecycle revision lineage"
+    ))]
+    #[codama(account(name = "event_authority", docs = "Event authority PDA", default_value = pda("eventAuthority")))]
+    #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
+    CancelSubscriptionNowVNext(#[codama(name = "action_data")] RevisionActionData) = 24,
+
+    #[codama(account(name = "subscriber", signer, docs = "Subscriber resuming the VNext Subscription"))]
+    #[codama(account(name = "plan_pda", docs = "VNext Plan"))]
+    #[codama(account(name = "plan_revision_registry", docs = "Permanent Plan revision lineage"))]
+    #[codama(account(name = "subscription_pda", writable, docs = "VNext Subscription"))]
+    #[codama(account(
+        name = "lifecycle_registry",
+        writable,
+        docs = "Permanent Subscription lifecycle revision lineage"
+    ))]
+    #[codama(account(name = "consent_registry", docs = "Active Authority Consent Registry"))]
+    #[codama(account(name = "authority", docs = "Tuple-bound VNext token delegate Authority"))]
+    #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
+    #[codama(account(name = "source_token_account", docs = "Exact customer-owned non-ATA source"))]
+    #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
+    #[codama(account(name = "event_authority", docs = "Event authority PDA", default_value = pda("eventAuthority")))]
+    #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
+    ResumeSubscriptionVNext(#[codama(name = "action_data")] RevisionActionData) = 25,
+
+    #[codama(account(name = "subscription_pda", writable, docs = "VNext Subscription state"))]
+    #[codama(account(name = "plan_pda", docs = "VNext Plan"))]
+    #[codama(account(name = "plan_revision_registry", docs = "Current Plan revision lineage"))]
+    #[codama(account(name = "lifecycle_registry", docs = "Current Subscription lifecycle lineage"))]
+    #[codama(account(name = "consent_registry", docs = "Active Authority Consent Registry"))]
+    #[codama(account(name = "authority", docs = "VNext token delegate Authority"))]
+    #[codama(account(name = "source_token_account", writable, docs = "Exact source token account"))]
+    #[codama(account(name = "destination_token_account", writable, docs = "Allowed destination token account"))]
+    #[codama(account(name = "caller", signer, docs = "Plan owner or an authorized puller"))]
+    #[codama(account(name = "token_mint", docs = "Subscription token mint"))]
+    #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
+    #[codama(account(name = "event_authority", docs = "Event authority PDA", default_value = pda("eventAuthority")))]
+    #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
+    TransferSubscriptionVNext(#[codama(name = "transfer_data")] VNextTransferData) = 26,
+
+    #[codama(account(name = "subscription_pda", writable, docs = "VNext Subscription state"))]
+    #[codama(account(name = "plan_pda", docs = "VNext Plan"))]
+    #[codama(account(name = "plan_revision_registry", docs = "Current Plan revision lineage"))]
+    #[codama(account(name = "lifecycle_registry", docs = "Current Subscription lifecycle lineage"))]
+    #[codama(account(name = "consent_registry", docs = "Active Authority Consent Registry"))]
+    #[codama(account(name = "authority", docs = "VNext token delegate Authority"))]
+    #[codama(account(name = "source_token_account", writable, docs = "Exact source token account"))]
+    #[codama(account(name = "destination_token_account", writable, docs = "Allowed destination token account"))]
+    #[codama(account(name = "caller", signer, docs = "Plan owner or an authorized puller"))]
+    #[codama(account(name = "token_mint", docs = "Subscription token mint"))]
+    #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
+    #[codama(account(name = "event_authority", docs = "Event authority PDA", default_value = pda("eventAuthority")))]
+    #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
+    TransferSubscriptionVNextV2(#[codama(name = "transfer_data_v2")] VNextTransferV2Data) = 27,
+
     #[codama(skip)]
     #[codama(account(
         name = "event_authority",
@@ -457,6 +651,46 @@ impl SubscriptionsInstruction {
                 Ok(Self::ResumeSubscription(loaded.clone()))
             }
             revoke_subscription_authority::DISCRIMINATOR => Ok(Self::RevokeSubscriptionAuthority),
+            authorize_subscription_authority_vnext::DISCRIMINATOR => {
+                let loaded = AuthorityActionData::load(rest)?;
+                Ok(Self::AuthorizeSubscriptionAuthorityVNext(loaded.clone()))
+            }
+            revoke_subscription_authority_vnext::DISCRIMINATOR => {
+                let loaded = AuthorityActionData::load(rest)?;
+                Ok(Self::RevokeSubscriptionAuthorityVNext(loaded.clone()))
+            }
+            vnext_plan::CREATE_DISCRIMINATOR => {
+                let loaded = VNextCreatePlanData::load(rest)?;
+                Ok(Self::CreatePlanVNext(loaded.clone()))
+            }
+            vnext_plan::UPDATE_DISCRIMINATOR => {
+                let loaded = VNextPlanUpdateData::load(rest)?;
+                Ok(Self::UpdatePlanVNext(loaded.clone()))
+            }
+            vnext_subscription::SUBSCRIBE_DISCRIMINATOR => {
+                let loaded = VNextSubscribeData::load(rest)?;
+                Ok(Self::SubscribeVNext(loaded.clone()))
+            }
+            vnext_subscription::CANCEL_DISCRIMINATOR => {
+                let loaded = RevisionActionData::load(rest)?;
+                Ok(Self::CancelSubscriptionVNext(loaded.clone()))
+            }
+            vnext_subscription::CANCEL_NOW_DISCRIMINATOR => {
+                let loaded = RevisionActionData::load(rest)?;
+                Ok(Self::CancelSubscriptionNowVNext(loaded.clone()))
+            }
+            vnext_subscription::RESUME_DISCRIMINATOR => {
+                let loaded = RevisionActionData::load(rest)?;
+                Ok(Self::ResumeSubscriptionVNext(loaded.clone()))
+            }
+            vnext_subscription::TRANSFER_DISCRIMINATOR => {
+                let loaded = VNextTransferData::load(rest)?;
+                Ok(Self::TransferSubscriptionVNext(loaded.clone()))
+            }
+            vnext_subscription::TRANSFER_V2_DISCRIMINATOR => {
+                let loaded = VNextTransferV2Data::load(rest)?;
+                Ok(Self::TransferSubscriptionVNextV2(loaded.clone()))
+            }
             revoke_abandoned_delegation::DISCRIMINATOR => Ok(Self::RevokeAbandonedDelegation),
             revoke_abandoned_subscription::DISCRIMINATOR => Ok(Self::RevokeAbandonedSubscription),
             &EMIT_EVENT_IX_DISC => Ok(Self::EmitEvent),
@@ -484,6 +718,16 @@ impl fmt::Display for SubscriptionsInstruction {
             Self::CancelSubscriptionNow(_) => write!(f, "cancel_subscription_now"),
             Self::ResumeSubscription(_) => write!(f, "resume_subscription"),
             Self::RevokeSubscriptionAuthority => write!(f, "revoke_subscription_authority"),
+            Self::AuthorizeSubscriptionAuthorityVNext(_) => write!(f, "authorize_subscription_authority_vnext"),
+            Self::RevokeSubscriptionAuthorityVNext(_) => write!(f, "revoke_subscription_authority_vnext"),
+            Self::CreatePlanVNext(_) => write!(f, "create_plan_vnext"),
+            Self::UpdatePlanVNext(_) => write!(f, "update_plan_vnext"),
+            Self::SubscribeVNext(_) => write!(f, "subscribe_vnext"),
+            Self::CancelSubscriptionVNext(_) => write!(f, "cancel_subscription_vnext"),
+            Self::CancelSubscriptionNowVNext(_) => write!(f, "cancel_subscription_now_vnext"),
+            Self::ResumeSubscriptionVNext(_) => write!(f, "resume_subscription_vnext"),
+            Self::TransferSubscriptionVNext(_) => write!(f, "transfer_subscription_vnext_v1_disabled"),
+            Self::TransferSubscriptionVNextV2(_) => write!(f, "transfer_subscription_vnext_v2"),
             Self::RevokeAbandonedDelegation => write!(f, "revoke_abandoned_delegation"),
             Self::RevokeAbandonedSubscription => write!(f, "revoke_abandoned_subscription"),
             Self::EmitEvent => write!(f, "emit_event"),

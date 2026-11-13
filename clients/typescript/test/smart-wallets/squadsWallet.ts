@@ -205,7 +205,7 @@ export class SquadsSmartWallet implements SmartWallet {
         }
     }
 
-    /** Executes an already-approved proposal. Program checks remain authoritative. */
+    /** Submits an approved proposal and returns its signature; callers must confirm or reconcile it. */
     async executeProposal(
         proposal: StagedSquadsProposal,
         executor: Keypair = this.members[0],

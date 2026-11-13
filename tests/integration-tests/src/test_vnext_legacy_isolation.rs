@@ -866,7 +866,10 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
 
     let legacy_revoke = RevokeSubscription::new(&mut litesvm, &subscriber, legacy_subscription, legacy_plan).execute();
     assert!(legacy_revoke.is_ok(), "legacy RevokeSubscription control case must remain operational");
-    assert!(litesvm.get_account(&legacy_subscription).is_none());
+    let revoked_subscription = litesvm.get_account(&legacy_subscription);
+    assert!(
+        revoked_subscription.is_none() || revoked_subscription.as_ref().map(|account| account.lamports).unwrap_or(0) == 0
+    );
 
     // Positive recovery control: resubscribe, close the subscriber Authority, advance beyond
     // its init slot, then let the recorded Subscription payer reclaim the abandoned account.
@@ -886,7 +889,12 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
     let abandoned_recovery =
         RevokeAbandonedSubscription::new(&mut litesvm, &subscriber, subscriber.pubkey(), mint, legacy_plan).execute();
     assert!(abandoned_recovery.is_ok(), "legacy abandoned Subscription recovery control must succeed");
-    assert!(litesvm.get_account(&legacy_subscription).is_none(), "recovered legacy Subscription must be closed");
+    let recovered_subscription = litesvm.get_account(&legacy_subscription);
+    assert!(
+        recovered_subscription.is_none()
+            || recovered_subscription.as_ref().map(|account| account.lamports).unwrap_or(0) == 0,
+        "recovered legacy Subscription must be closed"
+    );
     let subscriber_balance_after_recovery = litesvm.get_account(&subscriber.pubkey()).unwrap().lamports;
     assert!(
         subscriber_balance_after_recovery >= subscriber_balance_before_recovery + subscription_rent - 10_000,

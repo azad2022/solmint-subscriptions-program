@@ -11,7 +11,7 @@ import {
     TransactionInstruction,
 } from '@solana/web3.js';
 import * as squads from '@sqds/multisig';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { PROGRAM_ID } from '../../src/constants.ts';
 import { createSquadsWallet } from './squadsWallet.ts';
 
@@ -80,7 +80,7 @@ async function createMintAndVaultOwnedSourceAccount(
     const tokenAccountRent = await connection.getMinimumBalanceForRentExemption(165);
 
     const initializeMintData = Buffer.alloc(35);
-    initializeMintData.writeUInt8(0, 0); // InitializeMint
+    initializeMintData.writeUInt8(20, 0); // InitializeMint2 (no Rent sysvar account)
     initializeMintData.writeUInt8(0, 1); // decimals
     feePayer.publicKey.toBuffer().copy(initializeMintData, 2);
     initializeMintData.writeUInt8(0, 34); // no freeze authority
@@ -150,10 +150,6 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
         expect(squadsInfo?.executable, 'Squads v4 program must be present in the Surfpool fork').toBe(true);
         expect(tokenInfo?.executable, 'SPL Token program must be available').toBe(true);
     }, 120_000);
-
-    afterAll(async () => {
-        connection.removeAllListeners();
-    });
 
     it(
         'executes a revocation before an approved delayed authorization and rejects the stale proposal atomically',

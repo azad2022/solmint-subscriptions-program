@@ -432,7 +432,7 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
             });
             expect(failedTransaction?.meta?.err).not.toBeNull();
             expect(JSON.stringify(failedTransaction?.meta?.err)).toContain('143');
-            expect((failedTransaction?.meta?.logMessages ?? []).join('\\n')).toContain(
+            expect((failedTransaction?.meta?.logMessages ?? []).join('\n')).toContain(
                 'custom program error: 0x8f',
             );
 

@@ -167,7 +167,10 @@ fn vnext_integer_payloads_are_little_endian_golden_bytes() {
         expected_nonce: 0x1817_1615_1413_1211,
         not_after_ts: -2,
     };
-    assert_eq!(bytes_of(&payload), &[1, 2, 3, 4, 5, 6, 7, 8, 17, 18, 19, 20, 21, 22, 23, 24, 254, 255, 255, 255, 255, 255, 255, 255,]);
+    assert_eq!(
+        bytes_of(&payload),
+        &[1, 2, 3, 4, 5, 6, 7, 8, 17, 18, 19, 20, 21, 22, 23, 24, 254, 255, 255, 255, 255, 255, 255, 255,],
+    );
 }
 
 #[test]

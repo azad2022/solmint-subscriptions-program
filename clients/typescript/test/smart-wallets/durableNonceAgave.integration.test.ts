@@ -60,8 +60,14 @@ async function waitForValidator(child: ChildProcess, rpc: Connection): Promise<v
         }
 
         try {
-            if ((await rpc.getHealth()) === 'ok') {
-                await rpc.getLatestBlockhash('confirmed');
+            // Local validators can report health as "behind" despite producing
+            // slots normally. Readiness is established by the RPC methods this
+            // test actually depends on, not by the cluster health label.
+            const [latestBlockhash, slot] = await Promise.all([
+                rpc.getLatestBlockhash('confirmed'),
+                rpc.getSlot('confirmed'),
+            ]);
+            if (latestBlockhash.blockhash && slot > 0) {
                 return;
             }
         } catch {
@@ -71,7 +77,7 @@ async function waitForValidator(child: ChildProcess, rpc: Connection): Promise<v
         await new Promise(resolveDelay => setTimeout(resolveDelay, 500));
     }
 
-    throw new Error('AGAVE_TEST_VALIDATOR_START_TIMEOUT: ' + validatorLogs);
+    throw new Error('AGAVE_TEST_VALIDATOR_RPC_START_TIMEOUT: ' + validatorLogs);
 }
 
 async function stopValidator(): Promise<void> {

@@ -290,13 +290,27 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
 
             // Skip preflight so the stale inner instruction is submitted to the
             // local validator and its failed transaction metadata/logs are inspectable.
-            const staleSignature = await wallet.executeProposal(
-                delayedAuthorize,
-                members[0],
-                { skipPreflight: true },
+            const staleBlockhash = await connection.getLatestBlockhash('confirmed');
+            const staleExecutionTransaction = await squads.transactions.vaultTransactionExecute({
+                connection,
+                blockhash: staleBlockhash.blockhash,
+                feePayer: feePayer.publicKey,
+                multisigPda: new PublicKey(delayedAuthorize.multisigPda),
+                transactionIndex: delayedAuthorize.transactionIndex,
+                member: members[0].publicKey,
+                programId: squads.PROGRAM_ID,
+            });
+            staleExecutionTransaction.sign([feePayer, members[0]]);
+            const staleSignature = await connection.sendRawTransaction(
+                staleExecutionTransaction.serialize(),
+                { skipPreflight: true, maxRetries: 0 },
             );
             const staleConfirmation = await connection.confirmTransaction(
-                staleSignature,
+                {
+                    signature: staleSignature,
+                    blockhash: staleBlockhash.blockhash,
+                    lastValidBlockHeight: staleBlockhash.lastValidBlockHeight,
+                },
                 'confirmed',
             );
             expect(staleConfirmation.value.err).not.toBeNull();

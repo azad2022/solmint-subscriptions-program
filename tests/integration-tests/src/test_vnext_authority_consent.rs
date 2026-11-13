@@ -413,3 +413,79 @@ fn vnext_authority_consent_is_bound_to_exact_non_ata_source_account() {
     assert_eq!(registry_b_state.authority_generation, 1);
     assert_eq!(registry_b_state.status, AUTHORITY_REGISTRY_ACTIVE);
 }
+
+
+#[test]
+fn vnext_authority_consent_rejects_multiple_remaining_accounts_atomically() {
+    let (litesvm, subscriber) = &mut setup();
+    let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, Some(subscriber.pubkey()), &[]);
+    let source = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);
+    let (registry, authority) = derive_vnext_accounts(&subscriber.pubkey(), &mint, &source);
+    let extra_a = crate::tests::utils::init_wallet(litesvm, 1_000_000);
+    let extra_b = crate::tests::utils::init_wallet(litesvm, 1_000_000);
+    let deadline = crate::tests::utils::current_ts() + 3_600;
+
+    // More than one trailing account must be rejected before Registry,
+    // Authority, or token-delegate state is initialized.
+    let mut malformed_authorize = authorize_ix(
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        0,
+        0,
+        deadline,
+    );
+    malformed_authorize.accounts.push(AccountMeta::new_readonly(extra_a.pubkey(), false));
+    malformed_authorize.accounts.push(AccountMeta::new_readonly(extra_b.pubkey(), false));
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &malformed_authorize)
+        .assert_err(SubscriptionsError::InvalidInstructionData);
+
+    assert!(litesvm.get_account(&registry).is_none());
+    assert!(litesvm.get_account(&authority).is_none());
+    let source_after_failed_authorize = fetch_account::<TokenAccount>(litesvm, &source);
+    assert!(source_after_failed_authorize.delegate.is_none());
+    assert_eq!(source_after_failed_authorize.amount, 1_000_000);
+
+    // A malformed Revoke must not advance the Registry or remove an existing
+    // delegate. The same exact one-account tail policy applies to both paths.
+    let authorize = authorize_ix(
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        0,
+        0,
+        deadline,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize).assert_ok();
+
+    let mut malformed_revoke = revoke_ix(
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        1,
+        0,
+        crate::tests::utils::current_ts() + 3_600,
+    );
+    malformed_revoke.accounts.push(AccountMeta::new_readonly(extra_a.pubkey(), false));
+    malformed_revoke.accounts.push(AccountMeta::new_readonly(extra_b.pubkey(), false));
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &malformed_revoke)
+        .assert_err(SubscriptionsError::InvalidInstructionData);
+
+    let registry_account = litesvm.get_account(&registry).unwrap();
+    let registry_state = AuthorityConsentRegistry::load(&registry_account.data).unwrap();
+    assert_eq!(registry_state.authority_generation, 1);
+    assert_eq!(registry_state.authorize_nonce, 1);
+    assert_eq!(registry_state.revoke_nonce, 0);
+    assert_eq!(registry_state.status, AUTHORITY_REGISTRY_ACTIVE);
+
+    assert!(litesvm.get_account(&authority).is_some());
+    let source_after_failed_revoke = fetch_account::<TokenAccount>(litesvm, &source);
+    assert_eq!(source_after_failed_revoke.delegate, Some(authority));
+    assert_eq!(source_after_failed_revoke.delegated_amount, u64::MAX);
+}

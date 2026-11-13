@@ -1,4 +1,8 @@
 use solana_instruction::{AccountMeta, Instruction};
+use solana_hash::Hash;
+use solana_keypair::Keypair;
+use solana_nonce::{state::State as NonceState, versions::Versions as NonceVersions};
+use solana_system_interface::instruction::{advance_nonce_account, create_nonce_account};
 use solana_message::Message;
 use solana_pubkey::Pubkey;
 use solana_signer::Signer;
@@ -14,6 +18,67 @@ use crate::{
     AuthorityConsentRegistry, SubscriptionsError, VNextSubscriptionAuthority, AUTHORITY_REGISTRY_ACTIVE,
     AUTHORITY_REGISTRY_REVOKED,
 };
+
+
+fn create_initialized_nonce_account(
+    litesvm: &mut litesvm::LiteSVM,
+    payer: &Keypair,
+    nonce_authority: &Keypair,
+) -> Pubkey {
+    let nonce_account = Keypair::new();
+    let nonce_lamports = litesvm.minimum_balance_for_rent_exemption(NonceState::size());
+    let create_instructions = create_nonce_account(
+        &payer.pubkey(),
+        &nonce_account.pubkey(),
+        &nonce_authority.pubkey(),
+        nonce_lamports,
+    );
+    let create_transaction = Transaction::new(
+        &[payer, &nonce_account],
+        Message::new(&create_instructions, Some(&payer.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(create_transaction).assert_ok();
+
+    let account = litesvm.get_account(&nonce_account.pubkey()).unwrap();
+    assert_eq!(account.owner, SYSTEM_PROGRAM_ID);
+    let versions: NonceVersions = bincode::deserialize(&account.data).unwrap();
+    match versions.state() {
+        NonceState::Initialized(data) => assert_eq!(data.authority, nonce_authority.pubkey()),
+        NonceState::Uninitialized => panic!("System Program did not initialize the nonce account"),
+    }
+
+    nonce_account.pubkey()
+}
+
+fn read_initialized_nonce_hash(litesvm: &litesvm::LiteSVM, nonce_account: &Pubkey) -> Hash {
+    let account = litesvm.get_account(nonce_account).unwrap();
+    assert_eq!(account.owner, SYSTEM_PROGRAM_ID);
+    let versions: NonceVersions = bincode::deserialize(&account.data).unwrap();
+    match versions.state() {
+        NonceState::Initialized(data) => data.blockhash(),
+        NonceState::Uninitialized => panic!("Durable nonce account is not initialized"),
+    }
+}
+
+fn sign_durable_nonce_authorization(
+    subscriber: &Keypair,
+    nonce_authority: &Keypair,
+    nonce_account: &Pubkey,
+    nonce_hash: Hash,
+    authorize: &Instruction,
+) -> Transaction {
+    let instructions = [
+        advance_nonce_account(nonce_account, &nonce_authority.pubkey()),
+        authorize.clone(),
+    ];
+    assert_eq!(instructions[0].program_id, SYSTEM_PROGRAM_ID);
+    Transaction::new(
+        &[subscriber, nonce_authority],
+        Message::new(&instructions, Some(&subscriber.pubkey())),
+        nonce_hash,
+    )
+}
 
 fn to_address(key: &Pubkey) -> pinocchio::Address {
     pinocchio::Address::from(key.to_bytes())
@@ -433,4 +498,149 @@ fn vnext_authority_consent_rejects_multiple_remaining_accounts_atomically() {
     let source_after_failed_revoke = fetch_account::<TokenAccount>(litesvm, &source);
     assert_eq!(source_after_failed_revoke.delegate.unwrap(), authority);
     assert_eq!(source_after_failed_revoke.delegated_amount, u64::MAX);
+}
+
+
+#[test]
+fn vnext_durable_nonce_authorization_is_rejected_after_generation_invalidation() {
+    let (litesvm, subscriber) = &mut setup();
+    let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, Some(subscriber.pubkey()), &[]);
+    let source = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);
+    let (registry, authority) = derive_vnext_accounts(&subscriber.pubkey(), &mint, &source);
+
+    let nonce_authority = Keypair::new();
+    let nonce_account = create_initialized_nonce_account(litesvm, subscriber, &nonce_authority);
+    let original_nonce_hash = read_initialized_nonce_hash(litesvm, &nonce_account);
+    let deadline = crate::tests::utils::current_ts() + 3_600;
+    let authorize = authorize_ix(
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        0,
+        0,
+        deadline,
+    );
+
+    // Retain both a regular-blockhash transaction and a genuine durable-nonce
+    // transaction before the subscriber invalidates the Authority generation.
+    let recent_blockhash_transaction = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&authorize), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    let durable_nonce_transaction = sign_durable_nonce_authorization(
+        subscriber,
+        &nonce_authority,
+        &nonce_account,
+        original_nonce_hash,
+        &authorize,
+    );
+    let durable_nonce_replay = durable_nonce_transaction.clone();
+    let signing_slot = litesvm.get_sysvar::<solana_clock::Clock>().slot;
+
+    let revoke = revoke_ix(
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        1,
+        0,
+        crate::tests::utils::current_ts() + 3_600,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &revoke).assert_ok();
+
+    let revoked_registry = AuthorityConsentRegistry::load(&litesvm.get_account(&registry).unwrap().data).unwrap();
+    assert_eq!(revoked_registry.authority_generation, 2);
+    assert_eq!(revoked_registry.status, AUTHORITY_REGISTRY_REVOKED);
+    assert!(litesvm.get_account(&authority).is_none());
+
+    // Move beyond the recent-blockhash validity window without crossing the
+    // on-chain action deadline. The normal transaction must now be expired,
+    // while the stored nonce remains a valid transaction freshness proof.
+    litesvm.warp_to_slot(signing_slot + 200);
+    assert!(litesvm.get_sysvar::<solana_clock::Clock>().unix_timestamp < deadline);
+    assert!(
+        litesvm.send_transaction(recent_blockhash_transaction).is_err(),
+        "a regular recent-blockhash transaction must expire after the slot window"
+    );
+    assert_eq!(read_initialized_nonce_hash(litesvm, &nonce_account), original_nonce_hash);
+
+    // The nonce transaction passes runtime nonce validation and reaches the
+    // VNext instruction, which must reject its stale expected generation.
+    litesvm
+        .send_transaction(durable_nonce_transaction)
+        .assert_err_at(1, SubscriptionsError::StaleAuthorityGeneration);
+
+    // Solana consumes a valid durable nonce even when a later instruction
+    // fails. The failed authorization must not restore that nonce or replay.
+    let consumed_nonce_hash = read_initialized_nonce_hash(litesvm, &nonce_account);
+    assert_ne!(consumed_nonce_hash, original_nonce_hash);
+    assert!(litesvm.send_transaction(durable_nonce_replay).is_err());
+    assert_eq!(read_initialized_nonce_hash(litesvm, &nonce_account), consumed_nonce_hash);
+
+    let final_registry = AuthorityConsentRegistry::load(&litesvm.get_account(&registry).unwrap().data).unwrap();
+    assert_eq!(final_registry.authority_generation, 2);
+    assert_eq!(final_registry.status, AUTHORITY_REGISTRY_REVOKED);
+    assert!(litesvm.get_account(&authority).is_none());
+    let source_state = fetch_account::<TokenAccount>(litesvm, &source);
+    assert!(source_state.delegate.is_none());
+    assert_eq!(source_state.delegated_amount, 0);
+    assert_eq!(source_state.amount, 1_000_000);
+}
+
+#[test]
+fn vnext_durable_nonce_authorization_is_rejected_after_onchain_deadline() {
+    let (litesvm, subscriber) = &mut setup();
+    let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, Some(subscriber.pubkey()), &[]);
+    let source = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);
+    let (registry, authority) = derive_vnext_accounts(&subscriber.pubkey(), &mint, &source);
+
+    let nonce_authority = Keypair::new();
+    let nonce_account = create_initialized_nonce_account(litesvm, subscriber, &nonce_authority);
+    let original_nonce_hash = read_initialized_nonce_hash(litesvm, &nonce_account);
+    let deadline = crate::tests::utils::current_ts() + 3_600;
+    let authorize = authorize_ix(
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        0,
+        0,
+        deadline,
+    );
+    let durable_nonce_transaction = sign_durable_nonce_authorization(
+        subscriber,
+        &nonce_authority,
+        &nonce_account,
+        original_nonce_hash,
+        &authorize,
+    );
+    let durable_nonce_replay = durable_nonce_transaction.clone();
+    let signing_slot = litesvm.get_sysvar::<solana_clock::Clock>().slot;
+
+    // A durable nonce keeps the signed transaction eligible at the runtime
+    // layer, but it must not extend the Program-approved action deadline.
+    litesvm.warp_to_slot(signing_slot + 200);
+    crate::tests::utils::set_clock(litesvm, deadline + 1);
+    assert!(litesvm.get_sysvar::<solana_clock::Clock>().unix_timestamp > deadline);
+
+    litesvm
+        .send_transaction(durable_nonce_transaction)
+        .assert_err_at(1, SubscriptionsError::AuthorityActionExpired);
+
+    let consumed_nonce_hash = read_initialized_nonce_hash(litesvm, &nonce_account);
+    assert_ne!(consumed_nonce_hash, original_nonce_hash);
+    assert!(litesvm.send_transaction(durable_nonce_replay).is_err());
+    assert_eq!(read_initialized_nonce_hash(litesvm, &nonce_account), consumed_nonce_hash);
+
+    assert!(litesvm.get_account(&registry).is_none());
+    assert!(litesvm.get_account(&authority).is_none());
+    let source_state = fetch_account::<TokenAccount>(litesvm, &source);
+    assert!(source_state.delegate.is_none());
+    assert_eq!(source_state.delegated_amount, 0);
+    assert_eq!(source_state.amount, 1_000_000);
 }

@@ -700,10 +700,12 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
         "legacy Subscribe must reject a VNext Plan/Subscription binding"
     );
     let legacy_subscription_after_bad_subscribe = litesvm.get_account(&legacy_subscription).unwrap();
-    assert_eq!(legacy_subscription_after_bad_subscribe.data, legacy_subscription_before.data,
+    assert_eq!(
+        legacy_subscription_after_bad_subscribe.data, legacy_subscription_before.data,
         "account substitution during legacy Subscribe changed the real legacy Subscription"
     );
-    assert_eq!(legacy_subscription_after_bad_subscribe.lamports, legacy_subscription_before.lamports,
+    assert_eq!(
+        legacy_subscription_after_bad_subscribe.lamports, legacy_subscription_before.lamports,
         "account substitution during legacy Subscribe changed legacy Subscription lamports"
     );
 
@@ -879,14 +881,8 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
     assert!(close_authority.is_ok(), "legacy SubscriptionAuthority close control must remain operational");
     advance_slots(&mut litesvm, 1);
 
-    let abandoned_recovery = RevokeAbandonedSubscription::new(
-        &mut litesvm,
-        &subscriber,
-        subscriber.pubkey(),
-        mint,
-        legacy_plan,
-    )
-    .execute();
+    let abandoned_recovery =
+        RevokeAbandonedSubscription::new(&mut litesvm, &subscriber, subscriber.pubkey(), mint, legacy_plan).execute();
     assert!(abandoned_recovery.is_ok(), "legacy abandoned Subscription recovery control must succeed");
     assert!(litesvm.get_account(&legacy_subscription).is_none(), "recovered legacy Subscription must be closed");
     let subscriber_balance_after_recovery = litesvm.get_account(&subscriber.pubkey()).unwrap().lamports;
@@ -930,58 +926,34 @@ fn vnext_legacy_program_executes_token_2022_transfer_hook_with_extra_accounts() 
         Some(subscriber.pubkey()),
         &[ExtensionType::TransferHook],
     );
-    set_transfer_hook_config(
-        &mut litesvm,
-        mint,
-        Some(subscriber.pubkey()),
-        Some(TRANSFER_HOOK_EXAMPLE_PROGRAM_ID),
-    );
+    set_transfer_hook_config(&mut litesvm, mint, Some(subscriber.pubkey()), Some(TRANSFER_HOOK_EXAMPLE_PROGRAM_ID));
     let (validation_pda, counter) = install_transfer_hook_extra_metas(&mut litesvm, mint);
 
     let subscriber_ata = init_ata(&mut litesvm, mint, subscriber.pubkey(), 1_000_000);
     let merchant_ata = init_ata(&mut litesvm, mint, merchant.pubkey(), 0);
-    let (legacy_init, _legacy_authority, _) =
-        initialize_subscription_authority_action(&mut litesvm, &subscriber, mint);
+    let (legacy_init, _legacy_authority, _) = initialize_subscription_authority_action(&mut litesvm, &subscriber, mint);
     assert!(legacy_init.is_ok(), "legacy Token-2022 Authority initialization must succeed");
 
     let plan_id = 9002u64;
-    let (legacy_plan_result, legacy_plan) = CreatePlan::new(&mut litesvm, &merchant, mint)
-        .plan_id(plan_id)
-        .amount(100_000)
-        .period_hours(24)
-        .execute();
+    let (legacy_plan_result, legacy_plan) =
+        CreatePlan::new(&mut litesvm, &merchant, mint).plan_id(plan_id).amount(100_000).period_hours(24).execute();
     assert!(legacy_plan_result.is_ok(), "legacy Token-2022 Plan creation must succeed");
     let (_, plan_bump) = crate::tests::pda::get_plan_pda(&merchant.pubkey(), plan_id);
-    let subscribe = Subscribe::new(
-        &mut litesvm,
-        &subscriber,
-        merchant.pubkey(),
-        legacy_plan,
-        plan_id,
-        plan_bump,
-        mint,
-    )
-    .execute();
+    let subscribe =
+        Subscribe::new(&mut litesvm, &subscriber, merchant.pubkey(), legacy_plan, plan_id, plan_bump, mint).execute();
     assert!(subscribe.is_ok(), "legacy Token-2022 Subscription creation must succeed");
-    let (legacy_subscription, _) =
-        crate::tests::pda::get_subscription_pda(&legacy_plan, &subscriber.pubkey());
+    let (legacy_subscription, _) = crate::tests::pda::get_subscription_pda(&legacy_plan, &subscriber.pubkey());
 
     let subscription_before = litesvm.get_account(&legacy_subscription).unwrap();
     let source_before = litesvm.get_account(&subscriber_ata).unwrap();
     let destination_before = litesvm.get_account(&merchant_ata).unwrap();
     let counter_before = litesvm.get_account(&counter).unwrap();
 
-    let missing_hook_accounts = TransferSubscription::new(
-        &mut litesvm,
-        &merchant,
-        subscriber.pubkey(),
-        mint,
-        legacy_subscription,
-        legacy_plan,
-    )
-    .amount(100_000)
-    .to(merchant_ata)
-    .execute();
+    let missing_hook_accounts =
+        TransferSubscription::new(&mut litesvm, &merchant, subscriber.pubkey(), mint, legacy_subscription, legacy_plan)
+            .amount(100_000)
+            .to(merchant_ata)
+            .execute();
     assert!(missing_hook_accounts.is_err(), "Legacy TransferSubscription without Hook accounts must fail");
 
     let subscription_after_missing = litesvm.get_account(&legacy_subscription).unwrap();
@@ -997,22 +969,16 @@ fn vnext_legacy_program_executes_token_2022_transfer_hook_with_extra_accounts() 
     assert_eq!(counter_after_missing.data, counter_before.data);
     assert_eq!(counter_after_missing.lamports, counter_before.lamports);
 
-    let hooked_transfer = TransferSubscription::new(
-        &mut litesvm,
-        &merchant,
-        subscriber.pubkey(),
-        mint,
-        legacy_subscription,
-        legacy_plan,
-    )
-    .amount(100_000)
-    .to(merchant_ata)
-    .remaining(vec![
-        AccountMeta::new_readonly(TRANSFER_HOOK_EXAMPLE_PROGRAM_ID, false),
-        AccountMeta::new_readonly(validation_pda, false),
-        AccountMeta::new(counter, false),
-    ])
-    .execute();
+    let hooked_transfer =
+        TransferSubscription::new(&mut litesvm, &merchant, subscriber.pubkey(), mint, legacy_subscription, legacy_plan)
+            .amount(100_000)
+            .to(merchant_ata)
+            .remaining(vec![
+                AccountMeta::new_readonly(TRANSFER_HOOK_EXAMPLE_PROGRAM_ID, false),
+                AccountMeta::new_readonly(validation_pda, false),
+                AccountMeta::new(counter, false),
+            ])
+            .execute();
     assert!(hooked_transfer.is_ok(), "Legacy TransferSubscription must execute the active Token-2022 Hook");
 
     assert_eq!(fetch_account::<TokenAccount>(&litesvm, &subscriber_ata).amount, 900_000);

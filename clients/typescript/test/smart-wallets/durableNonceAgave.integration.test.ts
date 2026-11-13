@@ -11,7 +11,7 @@ import {
     sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { PROGRAM_ID } from '../../src/constants.ts';
@@ -21,8 +21,9 @@ const suite = enabled ? describe : describe.skip;
 const RPC_URL = 'http://127.0.0.1:8899';
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const PROGRAM_ADDRESS = new PublicKey(PROGRAM_ID);
-const NONCE_LIFETIME_SECONDS = 3_600n;
 const NONCE_ACCOUNT_SIZE = 80;
+const SOURCE_TOKEN_AMOUNT = 1_000_000n;
+const NONCE_LIFETIME_SECONDS = 3_600n;
 
 let validator: ChildProcess | undefined;
 let validatorLogs = '';
@@ -59,8 +60,7 @@ async function waitForValidator(child: ChildProcess, rpc: Connection): Promise<v
         }
 
         try {
-            const health = await rpc.getHealth();
-            if (health === 'ok') {
+            if ((await rpc.getHealth()) === 'ok') {
                 await rpc.getLatestBlockhash('confirmed');
                 return;
             }
@@ -75,8 +75,7 @@ async function waitForValidator(child: ChildProcess, rpc: Connection): Promise<v
 }
 
 async function stopValidator(): Promise<void> {
-    // This test uses only request/response RPC calls; there are no subscriptions
-    // or websocket listeners to close on the Connection instance.
+    // This test uses request/response RPC only; there are no websocket subscriptions.
     connection = undefined;
 
     if (validator && validator.exitCode === null && validator.signalCode === null) {
@@ -109,7 +108,73 @@ function readClockUnixTimestamp(data: Buffer): bigint {
     return data.readBigInt64LE(32);
 }
 
-function authorityRevokeInstruction(
+async function createSubscriberOwnedMintAndNonAtaSource(
+    rpc: Connection,
+): Promise<void> {
+    const mintRent = await rpc.getMinimumBalanceForRentExemption(82);
+    const tokenAccountRent = await rpc.getMinimumBalanceForRentExemption(165);
+
+    const initializeMint2Data = Buffer.alloc(35);
+    initializeMint2Data.writeUInt8(20, 0); // InitializeMint2
+    initializeMint2Data.writeUInt8(6, 1); // Six decimal places.
+    subscriber.publicKey.toBuffer().copy(initializeMint2Data, 2);
+    initializeMint2Data.writeUInt8(0, 34); // No freeze authority.
+
+    const initializeAccount3Data = Buffer.alloc(33);
+    initializeAccount3Data.writeUInt8(18, 0); // InitializeAccount3
+    subscriber.publicKey.toBuffer().copy(initializeAccount3Data, 1);
+
+    const mintToData = Buffer.alloc(9);
+    mintToData.writeUInt8(7, 0); // MintTo
+    mintToData.writeBigUInt64LE(SOURCE_TOKEN_AMOUNT, 1);
+
+    const transaction = new Transaction().add(
+        SystemProgram.createAccount({
+            fromPubkey: subscriber.publicKey,
+            newAccountPubkey: mint.publicKey,
+            lamports: mintRent,
+            space: 82,
+            programId: TOKEN_PROGRAM_ID,
+        }),
+        new TransactionInstruction({
+            programId: TOKEN_PROGRAM_ID,
+            keys: [{ pubkey: mint.publicKey, isSigner: false, isWritable: true }],
+            data: initializeMint2Data,
+        }),
+        SystemProgram.createAccount({
+            fromPubkey: subscriber.publicKey,
+            newAccountPubkey: sourceTokenAccount.publicKey,
+            lamports: tokenAccountRent,
+            space: 165,
+            programId: TOKEN_PROGRAM_ID,
+        }),
+        new TransactionInstruction({
+            programId: TOKEN_PROGRAM_ID,
+            keys: [
+                { pubkey: sourceTokenAccount.publicKey, isSigner: false, isWritable: true },
+                { pubkey: mint.publicKey, isSigner: false, isWritable: false },
+            ],
+            data: initializeAccount3Data,
+        }),
+        new TransactionInstruction({
+            programId: TOKEN_PROGRAM_ID,
+            keys: [
+                { pubkey: mint.publicKey, isSigner: false, isWritable: true },
+                { pubkey: sourceTokenAccount.publicKey, isSigner: false, isWritable: true },
+                { pubkey: subscriber.publicKey, isSigner: true, isWritable: false },
+            ],
+            data: mintToData,
+        }),
+    );
+
+    await sendAndConfirmTransaction(rpc, transaction, [
+        subscriber,
+        mint,
+        sourceTokenAccount,
+    ]);
+}
+
+function authorityAuthorizeInstruction(
     subscriberAddress: PublicKey,
     registry: PublicKey,
     authority: PublicKey,
@@ -118,9 +183,9 @@ function authorityRevokeInstruction(
     notAfterTimestamp: bigint,
 ): TransactionInstruction {
     const data = Buffer.alloc(25);
-    data.writeUInt8(19, 0); // RevokeSubscriptionAuthorityVNext
-    data.writeBigUInt64LE(1n, 1); // Pre-empt the one pending generation-zero authorization.
-    data.writeBigUInt64LE(0n, 9); // First revoke nonce.
+    data.writeUInt8(18, 0); // AuthorizeSubscriptionAuthorityVNext
+    data.writeBigUInt64LE(0n, 1); // Initial Registry generation.
+    data.writeBigUInt64LE(0n, 9); // First authorization nonce.
     data.writeBigInt64LE(notAfterTimestamp, 17);
 
     return new TransactionInstruction({
@@ -161,7 +226,7 @@ function deliberatelyFailingTransfer(
 
 function buildDurableNonceTransaction(
     nonceHash: string,
-    revoke: TransactionInstruction,
+    authorize: TransactionInstruction,
     failingTransfer: TransactionInstruction,
 ): Transaction {
     const transaction = new Transaction();
@@ -172,11 +237,21 @@ function buildDurableNonceTransaction(
             noncePubkey: nonceAccount.publicKey,
             authorizedPubkey: nonceAuthority.publicKey,
         }),
-        revoke,
+        authorize,
         failingTransfer,
     );
     transaction.sign(subscriber, nonceAuthority);
     return transaction;
+}
+
+function expectSourceTokenAccountUnchanged(data: Buffer): void {
+    // SPL Token Account layout: amount is at byte 64, delegate COption at byte 72,
+    // and delegated_amount at byte 121. A failed outer transaction must roll
+    // back the nested Token Program Approve CPI as well as VNext PDAs.
+    expect(data.length).toBe(165);
+    expect(data.readBigUInt64LE(64)).toBe(SOURCE_TOKEN_AMOUNT);
+    expect(data.readUInt32LE(72)).toBe(0);
+    expect(data.readBigUInt64LE(121)).toBe(0n);
 }
 
 suite('VNext durable nonce semantics on the real Agave test validator', () => {
@@ -195,29 +270,8 @@ suite('VNext durable nonce semantics on the real Agave test validator', () => {
         nonceAuthority = Keypair.generate();
         nonceAccount = Keypair.generate();
 
-        // A minimal initialized SPL Mint account fixture. The Revoke tombstone
-        // path validates its owner, exact 82-byte layout and initialized flag,
-        // but does not invoke the Token Program because the source account and
-        // VNext Authority do not yet exist.
-        const mintData = Buffer.alloc(82);
-        mintData.writeUInt8(6, 44);
-        mintData.writeUInt8(1, 45);
-        const mintFixture = {
-            pubkey: mint.publicKey.toBase58(),
-            account: {
-                lamports: 1_000_000_000,
-                data: [mintData.toString('base64'), 'base64'],
-                owner: TOKEN_PROGRAM_ID.toBase58(),
-                executable: false,
-                rentEpoch: 0,
-            },
-            space: 82,
-        };
-        const mintFixturePath = join(temporaryDirectory, 'initialized-spl-mint.json');
-        await writeFile(mintFixturePath, JSON.stringify(mintFixture), 'utf8');
-
         const ledgerPath = join(temporaryDirectory, 'ledger');
-        validator = spawn(
+        const child = spawn(
             'solana-test-validator',
             [
                 '--reset',
@@ -228,17 +282,23 @@ suite('VNext durable nonce semantics on the real Agave test validator', () => {
                 '--bpf-program',
                 PROGRAM_ADDRESS.toBase58(),
                 absoluteProgramPath,
-                '--account',
-                mint.publicKey.toBase58(),
-                mintFixturePath,
             ],
             { stdio: ['ignore', 'pipe', 'pipe'] },
         );
-        validator.stdout?.on('data', appendValidatorLog);
-        validator.stderr?.on('data', appendValidatorLog);
+        validator = child;
+        child.stdout?.on('data', appendValidatorLog);
+        child.stderr?.on('data', appendValidatorLog);
 
-        connection = new Connection(RPC_URL, 'confirmed');
-        await waitForValidator(validator, connection);
+        const rpc = new Connection(RPC_URL, 'confirmed');
+        connection = rpc;
+        await waitForValidator(child, rpc);
+
+        const [programInfo, tokenProgramInfo] = await Promise.all([
+            rpc.getAccountInfo(PROGRAM_ADDRESS, 'confirmed'),
+            rpc.getAccountInfo(TOKEN_PROGRAM_ID, 'confirmed'),
+        ]);
+        expect(programInfo?.executable, 'Exact VNext SBF must be executable').toBe(true);
+        expect(tokenProgramInfo?.executable, 'SPL Token Program must be executable').toBe(true);
     }, 120_000);
 
     afterAll(async () => {
@@ -246,7 +306,7 @@ suite('VNext durable nonce semantics on the real Agave test validator', () => {
     });
 
     it(
-        'persists nonce advancement, rolls back authority state after a later instruction fails, and rejects a fresh-signature replay',
+        'persists nonce advancement while rolling back successful VNext authorization and SPL Token Approve after a later failure',
         async () => {
             const rpc = connection;
             if (!rpc) throw new Error('AGAVE_TEST_VALIDATOR_NOT_STARTED');
@@ -268,6 +328,8 @@ suite('VNext durable nonce semantics on the real Agave test validator', () => {
                 'confirmed',
             );
             expect(nonSignerAirdropConfirmation.value.err).toBeNull();
+
+            await createSubscriberOwnedMintAndNonAtaSource(rpc);
 
             const nonceRent = await rpc.getMinimumBalanceForRentExemption(NONCE_ACCOUNT_SIZE);
             const nonceCreation = SystemProgram.createNonceAccount({
@@ -306,7 +368,7 @@ suite('VNext durable nonce semantics on the real Agave test validator', () => {
             const clockInfo = await rpc.getAccountInfo(SYSVAR_CLOCK_PUBKEY, 'confirmed');
             expect(clockInfo).not.toBeNull();
             const notAfter = readClockUnixTimestamp(clockInfo!.data) + NONCE_LIFETIME_SECONDS;
-            const revoke = authorityRevokeInstruction(
+            const authorize = authorityAuthorizeInstruction(
                 subscriber.publicKey,
                 registry,
                 authority,
@@ -317,7 +379,7 @@ suite('VNext durable nonce semantics on the real Agave test validator', () => {
 
             const failedTransaction = buildDurableNonceTransaction(
                 originalNonceHash,
-                revoke,
+                authorize,
                 deliberatelyFailingTransfer(nonSignerSource.publicKey, subscriber.publicKey, 1n),
             );
             const signature = await rpc.sendRawTransaction(failedTransaction.serialize(), {
@@ -333,15 +395,20 @@ suite('VNext durable nonce semantics on the real Agave test validator', () => {
             });
             expect(confirmedTransaction).not.toBeNull();
             expect(confirmedTransaction!.meta?.err).not.toBeNull();
+            expect(JSON.stringify(confirmedTransaction!.meta?.err)).toMatch(/MissingRequiredSignature/);
 
             const executionLogs = confirmedTransaction!.meta?.logMessages ?? [];
+            const tokenProgramSuccess = executionLogs.findIndex(line =>
+                line.includes('Program ' + TOKEN_PROGRAM_ID.toBase58() + ' success'),
+            );
             const authorityProgramSuccess = executionLogs.findIndex(line =>
                 line.includes('Program ' + PROGRAM_ADDRESS.toBase58() + ' success'),
             );
             const laterSystemProgramFailure = executionLogs.findIndex(line =>
                 line.includes('Program ' + SystemProgram.programId.toBase58() + ' failed'),
             );
-            expect(authorityProgramSuccess).toBeGreaterThanOrEqual(0);
+            expect(tokenProgramSuccess).toBeGreaterThanOrEqual(0);
+            expect(authorityProgramSuccess).toBeGreaterThan(tokenProgramSuccess);
             expect(laterSystemProgramFailure).toBeGreaterThan(authorityProgramSuccess);
 
             const nonceAfterFailureInfo = await rpc.getAccountInfo(nonceAccount.publicKey, 'confirmed');
@@ -349,17 +416,20 @@ suite('VNext durable nonce semantics on the real Agave test validator', () => {
             const nonceAfterFailure = readNonceHash(nonceAfterFailureInfo!.data);
             expect(nonceAfterFailure).not.toBe(originalNonceHash);
 
-            // The failed transaction's Authority Registry allocation and
-            // lifecycle change must be rolled back by the validator.
+            // The successful authorization and Token Program Approve happen
+            // before instruction #2 fails. Both PDAs and the token delegate
+            // must be rolled back; only the durable nonce and fee persist.
             expect(await rpc.getAccountInfo(registry, 'confirmed')).toBeNull();
             expect(await rpc.getAccountInfo(authority, 'confirmed')).toBeNull();
+            const sourceAfterFailure = await rpc.getAccountInfo(sourceTokenAccount.publicKey, 'confirmed');
+            expect(sourceAfterFailure).not.toBeNull();
+            expectSourceTokenAccountUnchanged(sourceAfterFailure!.data);
 
-            // Change a non-financial instruction byte to obtain a new transaction
-            // signature while retaining the consumed nonce hash. A duplicate
-            // signature rejection alone would not prove nonce consumption.
+            // Change only a non-financial failure-instruction byte to obtain a
+            // different transaction signature while retaining the consumed nonce.
             const staleReplay = buildDurableNonceTransaction(
                 originalNonceHash,
-                revoke,
+                authorize,
                 deliberatelyFailingTransfer(nonSignerSource.publicKey, subscriber.publicKey, 2n),
             );
 
@@ -394,6 +464,9 @@ suite('VNext durable nonce semantics on the real Agave test validator', () => {
             expect(readNonceHash(nonceAfterReplayInfo!.data)).toBe(nonceAfterFailure);
             expect(await rpc.getAccountInfo(registry, 'confirmed')).toBeNull();
             expect(await rpc.getAccountInfo(authority, 'confirmed')).toBeNull();
+            const sourceAfterReplay = await rpc.getAccountInfo(sourceTokenAccount.publicKey, 'confirmed');
+            expect(sourceAfterReplay).not.toBeNull();
+            expectSourceTokenAccountUnchanged(sourceAfterReplay!.data);
         },
         240_000,
     );

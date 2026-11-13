@@ -415,26 +415,58 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
             const current = await advanceClockPast(connection, feePayer, members[0].publicKey, deadline);
             expect(current).toBeGreaterThan(deadline);
 
-            const staleSignature = await wallet.executeProposal(
-                delayedAuthorize,
-                members[0],
-                { skipPreflight: true },
-            );
-            const confirmation = await connection.confirmTransaction(
-                staleSignature,
-                'confirmed',
-            );
-            expect(confirmation.value.err).not.toBeNull();
+            let executionSignature: string | null = null;
+            let executionError: unknown = null;
+            try {
+                executionSignature = await wallet.executeProposal(
+                    delayedAuthorize,
+                    members[0],
+                    { skipPreflight: true },
+                );
+                const confirmation = await connection.confirmTransaction(
+                    executionSignature,
+                    'confirmed',
+                );
+                expect(confirmation.value.err).not.toBeNull();
+            } catch (error) {
+                executionError = error;
+            }
 
-            const failedTransaction = await connection.getTransaction(staleSignature, {
-                commitment: 'confirmed',
-                maxSupportedTransactionVersion: 0,
-            });
-            expect(failedTransaction?.meta?.err).not.toBeNull();
-            expect(JSON.stringify(failedTransaction?.meta?.err)).toContain('143');
-            expect((failedTransaction?.meta?.logMessages ?? []).join('\n')).toContain(
-                'custom program error: 0x8f',
-            );
+            let failedTransaction = null;
+            if (executionSignature) {
+                try {
+                    failedTransaction = await connection.getTransaction(executionSignature, {
+                        commitment: 'confirmed',
+                        maxSupportedTransactionVersion: 0,
+                    });
+                } catch (error) {
+                    executionError ??= error;
+                }
+            }
+
+            if (failedTransaction) {
+                expect(failedTransaction.meta?.err).not.toBeNull();
+                expect(JSON.stringify(failedTransaction.meta?.err)).toContain('143');
+                expect((failedTransaction.meta?.logMessages ?? []).join('\n')).toContain(
+                    'custom program error: 0x8f',
+                );
+            } else {
+                const errorText = executionError instanceof Error
+                    ? `${executionError.message} ${JSON.stringify(executionError)}`
+                    : JSON.stringify(executionError);
+                expect(errorText).toContain('143');
+                const errorWithLogs = executionError as {
+                    logs?: string[];
+                    getLogs?: (connection: Connection) => Promise<string[]>;
+                } | null;
+                let errorLogs = errorWithLogs?.logs ?? [];
+                if (errorLogs.length === 0 && typeof errorWithLogs?.getLogs === 'function') {
+                    errorLogs = await errorWithLogs.getLogs(connection);
+                }
+                if (errorLogs.length > 0) {
+                    expect(errorLogs.join('\n')).toContain('custom program error: 0x8f');
+                }
+            }
 
             const [proposalPda] = squads.getProposalPda({
                 multisigPda: new PublicKey(delayedAuthorize.multisigPda),

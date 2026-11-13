@@ -1019,3 +1019,241 @@ fn vnext_tombstone_invalidates_pending_authorize_and_subscribe() {
     assert!(source_state.delegate.is_none());
     assert_eq!(source_state.delegated_amount, 0);
 }
+
+#[test]
+fn vnext_stale_cancel_now_and_resume_cannot_survive_same_timestamp_aba() {
+    let (litesvm, subscriber) = &mut setup();
+    let merchant = crate::tests::utils::init_wallet(litesvm, 10_000_000_000);
+    let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, Some(subscriber.pubkey()), &[]);
+    let source = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);
+
+    // Freeze Program time so both cancellation incarnations have exactly the
+    // same stop timestamp. Timestamp equality must not revive old approvals.
+    let now = litesvm.get_sysvar::<solana_clock::Clock>().unix_timestamp;
+    crate::tests::utils::set_clock(litesvm, now);
+
+    let subscriber_address = to_address(&subscriber.pubkey());
+    let mint_address = to_address(&mint);
+    let source_address = to_address(&source);
+    let consent_registry =
+        to_pubkey(AuthorityConsentRegistry::find_pda(&subscriber_address, &mint_address, &source_address).0);
+    let authority =
+        to_pubkey(VNextSubscriptionAuthority::find_pda(&subscriber_address, &mint_address, &source_address).0);
+    let authorize = authorize_ix(&subscriber.pubkey(), consent_registry, authority, mint, source, TOKEN_PROGRAM_ID);
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize).assert_ok();
+
+    let (create, plan, plan_revision_registry) = create_plan_ix(&merchant.pubkey(), mint, 7, TOKEN_PROGRAM_ID);
+    build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &create).assert_ok();
+
+    let plan_address = to_address(&plan);
+    let subscription = to_pubkey(VNextSubscription::find_pda(&plan_address, &subscriber_address, &source_address).0);
+    let lifecycle_registry =
+        to_pubkey(SubscriptionLifecycleRegistry::find_pda(&plan_address, &subscriber_address, &source_address).0);
+    let plan_bump = VNextPlan::find_pda(&to_address(&merchant.pubkey()), 7).1;
+    let plan_account = litesvm.get_account(&plan).unwrap();
+    let created_at = VNextPlan::load(&plan_account.data).unwrap().data.terms.created_at;
+
+    let subscribe = subscribe_ix(
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        mint,
+        source,
+        plan_bump,
+        created_at,
+        0,
+        0,
+        TOKEN_PROGRAM_ID,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &subscribe).assert_ok();
+
+    // First cancellation creates lifecycle revision 2 / nonce 2.
+    let cancel_first = cancel_ix(
+        &subscriber.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        1,
+        1,
+    );
+    let cancel_first_tx = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&cancel_first), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(cancel_first_tx).assert_ok();
+    let first_expiry = VNextSubscription::load(&litesvm.get_account(&subscription).unwrap().data)
+        .unwrap()
+        .expires_at_ts;
+
+    // Retain an obsolete Resume approval at revision 2/nonce 2. Use a
+    // different bounded deadline for the valid Resume below so both signed
+    // messages can coexist under the same recent blockhash.
+    let mut stale_resume = resume_ix(
+        &subscriber.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        mint,
+        source,
+        2,
+        2,
+    );
+    stale_resume.data[17..25].copy_from_slice(&(now + 1_800).to_le_bytes());
+    let stale_resume_tx = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&stale_resume), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+
+    let mut valid_resume = resume_ix(
+        &subscriber.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        mint,
+        source,
+        2,
+        2,
+    );
+    valid_resume.data[17..25].copy_from_slice(&(now + 3_600).to_le_bytes());
+    let valid_resume_tx = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&valid_resume), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(valid_resume_tx).assert_ok();
+
+    // Cancel again at the identical Program timestamp. This recreates the
+    // same expires_at value while advancing the persistent lifecycle lineage.
+    let cancel_second = cancel_ix(
+        &subscriber.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        3,
+        3,
+    );
+    let cancel_second_tx = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&cancel_second), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(cancel_second_tx).assert_ok();
+    let second_expiry = VNextSubscription::load(&litesvm.get_account(&subscription).unwrap().data)
+        .unwrap()
+        .expires_at_ts;
+    assert_eq!(first_expiry, second_expiry, "test must exercise same-timestamp cancellation ABA");
+
+    // The old Resume must fail because its revision/nonce belongs to the
+    // first cancellation, even though the current cancellation timestamp is
+    // byte-for-byte identical. Replaying with a fresh blockhash must also fail.
+    litesvm.send_transaction(stale_resume_tx).assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
+    litesvm.expire_blockhash();
+    let stale_resume_replay = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&stale_resume), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm
+        .send_transaction(stale_resume_replay)
+        .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
+
+    // Retain a dual-signed CancelNow approval for revision 4/nonce 4, then
+    // execute a distinct valid one against the same state.
+    let mut stale_cancel_now = cancel_now_ix(
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        4,
+        4,
+    );
+    stale_cancel_now.data[17..25].copy_from_slice(&(now + 1_800).to_le_bytes());
+    let stale_cancel_now_tx = Transaction::new(
+        &[&*subscriber, &merchant],
+        Message::new(std::slice::from_ref(&stale_cancel_now), Some(&merchant.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+
+    let mut valid_cancel_now = cancel_now_ix(
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        4,
+        4,
+    );
+    valid_cancel_now.data[17..25].copy_from_slice(&(now + 3_600).to_le_bytes());
+    let valid_cancel_now_tx = Transaction::new(
+        &[&*subscriber, &merchant],
+        Message::new(std::slice::from_ref(&valid_cancel_now), Some(&merchant.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(valid_cancel_now_tx).assert_ok();
+
+    // Re-subscribe at the same logical Subscription PDA after the immediate
+    // stop boundary. The permanent lifecycle Registry must not be reset.
+    let resubscribe = subscribe_ix(
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        mint,
+        source,
+        plan_bump,
+        created_at,
+        5,
+        5,
+        TOKEN_PROGRAM_ID,
+    );
+    let resubscribe_tx = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&resubscribe), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(resubscribe_tx).assert_ok();
+
+    // The retained CancelNow cannot cancel the new Subscription incarnation.
+    litesvm
+        .send_transaction(stale_cancel_now_tx)
+        .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
+    litesvm.expire_blockhash();
+    let stale_cancel_now_replay = Transaction::new(
+        &[&*subscriber, &merchant],
+        Message::new(std::slice::from_ref(&stale_cancel_now), Some(&merchant.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm
+        .send_transaction(stale_cancel_now_replay)
+        .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
+
+    let lifecycle = SubscriptionLifecycleRegistry::load(&litesvm.get_account(&lifecycle_registry).unwrap().data).unwrap();
+    assert_eq!(lifecycle.revision, 6);
+    assert_eq!(lifecycle.action_nonce, 6);
+    let current_subscription = VNextSubscription::load(&litesvm.get_account(&subscription).unwrap().data).unwrap();
+    assert_eq!(current_subscription.lifecycle_revision, 6);
+    assert_eq!(current_subscription.expires_at_ts, 0);
+}
+

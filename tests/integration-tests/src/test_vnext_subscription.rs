@@ -1,4 +1,5 @@
-use solana_instruction::{AccountMeta, Instruction};
+use solana_instruction::{error::InstructionError, AccountMeta, Instruction};
+use solana_transaction_error::TransactionError;
 use solana_message::Message;
 use solana_pubkey::Pubkey;
 use solana_signer::Signer;
@@ -44,6 +45,16 @@ fn instruction(discriminator: u8, payload: &[u8], accounts: Vec<AccountMeta>) ->
     data.push(discriminator);
     data.extend_from_slice(payload);
     Instruction { program_id: PROGRAM_ID, accounts, data }
+}
+
+fn assert_invalid_account_owner(result: litesvm::types::TransactionResult) {
+    match result {
+        Ok(_) => panic!("Expected missing VNext Authority PDA to fail account-owner validation"),
+        Err(failed) => assert_eq!(
+            failed.err,
+            TransactionError::InstructionError(0, InstructionError::InvalidAccountOwner)
+        ),
+    }
 }
 
 fn event_authority() -> Pubkey {
@@ -992,9 +1003,7 @@ fn vnext_tombstone_invalidates_pending_authorize_and_subscribe() {
     litesvm
         .send_transaction(stale_authorize_signed)
         .assert_err(SubscriptionsError::StaleAuthorityGeneration);
-    litesvm
-        .send_transaction(stale_subscribe_signed)
-        .assert_err(SubscriptionsError::Unauthorized);
+    assert_invalid_account_owner(litesvm.send_transaction(stale_subscribe_signed));
 
     // Re-sign both obsolete payloads with a fresh blockhash. Their rejection
     // must come from persistent Registry state, not blockhash expiry.
@@ -1011,7 +1020,7 @@ fn vnext_tombstone_invalidates_pending_authorize_and_subscribe() {
         Message::new(std::slice::from_ref(&stale_subscribe), Some(&subscriber.pubkey())),
         litesvm.latest_blockhash(),
     );
-    litesvm.send_transaction(replayed_subscribe).assert_err(SubscriptionsError::Unauthorized);
+    assert_invalid_account_owner(litesvm.send_transaction(replayed_subscribe));
 
     let registry_account = litesvm.get_account(&consent_registry).unwrap();
     let registry = AuthorityConsentRegistry::load(&registry_account.data).unwrap();

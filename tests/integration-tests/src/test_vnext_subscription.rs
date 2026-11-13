@@ -1073,15 +1073,8 @@ fn vnext_stale_cancel_now_and_resume_cannot_survive_same_timestamp_aba() {
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &subscribe).assert_ok();
 
     // First cancellation creates lifecycle revision 2 / nonce 2.
-    let cancel_first = cancel_ix(
-        &subscriber.pubkey(),
-        plan,
-        plan_revision_registry,
-        subscription,
-        lifecycle_registry,
-        1,
-        1,
-    );
+    let cancel_first =
+        cancel_ix(&subscriber.pubkey(), plan, plan_revision_registry, subscription, lifecycle_registry, 1, 1);
     let cancel_first_tx = Transaction::new(
         &[&*subscriber],
         Message::new(std::slice::from_ref(&cancel_first), Some(&subscriber.pubkey())),
@@ -1137,15 +1130,8 @@ fn vnext_stale_cancel_now_and_resume_cannot_survive_same_timestamp_aba() {
 
     // Cancel again at the identical Program timestamp. This recreates the
     // same expires_at value while advancing the persistent lifecycle lineage.
-    let cancel_second = cancel_ix(
-        &subscriber.pubkey(),
-        plan,
-        plan_revision_registry,
-        subscription,
-        lifecycle_registry,
-        3,
-        3,
-    );
+    let cancel_second =
+        cancel_ix(&subscriber.pubkey(), plan, plan_revision_registry, subscription, lifecycle_registry, 3, 3);
     let cancel_second_tx = Transaction::new(
         &[&*subscriber],
         Message::new(std::slice::from_ref(&cancel_second), Some(&subscriber.pubkey())),
@@ -1166,9 +1152,7 @@ fn vnext_stale_cancel_now_and_resume_cannot_survive_same_timestamp_aba() {
         Message::new(std::slice::from_ref(&stale_resume), Some(&subscriber.pubkey())),
         litesvm.latest_blockhash(),
     );
-    litesvm
-        .send_transaction(stale_resume_replay)
-        .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
+    litesvm.send_transaction(stale_resume_replay).assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
 
     // Retain a dual-signed CancelNow approval for revision 4/nonce 4, then
     // execute a distinct valid one against the same state.
@@ -1234,9 +1218,7 @@ fn vnext_stale_cancel_now_and_resume_cannot_survive_same_timestamp_aba() {
     litesvm.send_transaction(resubscribe_tx).assert_ok();
 
     // The retained CancelNow cannot cancel the new Subscription incarnation.
-    litesvm
-        .send_transaction(stale_cancel_now_tx)
-        .assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
+    litesvm.send_transaction(stale_cancel_now_tx).assert_err(SubscriptionsError::StaleSubscriptionLifecycleRevision);
     litesvm.expire_blockhash();
     let stale_cancel_now_replay = Transaction::new(
         &[&*subscriber, &merchant],
@@ -1256,4 +1238,3 @@ fn vnext_stale_cancel_now_and_resume_cannot_survive_same_timestamp_aba() {
     assert_eq!(current_subscription.lifecycle_revision, 6);
     assert_eq!(current_subscription.expires_at_ts, 0);
 }
-

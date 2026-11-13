@@ -54,3 +54,5 @@ mod test_vnext_authority_consent;
 mod test_vnext_legacy_isolation;
 #[cfg(test)]
 mod test_vnext_subscription;
+#[cfg(test)]
+mod test_vnext_abi;

@@ -33,7 +33,7 @@ fn assert_instruction_contract(
         .find(|candidate| candidate["name"].as_str() == Some(idl_name))
         .unwrap_or_else(|| panic!("missing VNext instruction in IDL: {idl_name}"));
 
-    let args = instruction["args"].as_array().expect("instruction args must be an array");
+    let args = instruction["arguments"].as_array().expect("Codama instruction arguments must be an array");
     assert_eq!(args.len(), 2, "{idl_name}: unexpected argument count");
     assert_eq!(args[0]["name"], "discriminator");
     assert_eq!(

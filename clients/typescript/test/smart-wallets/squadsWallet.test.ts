@@ -154,6 +154,26 @@ describe('SquadsSmartWallet staged proposal lifecycle', () => {
         expect(rpcMocks.proposalApprove).toHaveBeenCalledOnce();
     });
 
+    it('does not pass the creator twice when creator is also the fee payer', async () => {
+        const samePayerWallet = new SquadsSmartWallet({
+            connection,
+            feePayer: members[0],
+            members,
+            approvalsRequired: 2,
+            multisigPda,
+            vaultIndex: 4,
+            programId: squads.PROGRAM_ID,
+        });
+
+        await samePayerWallet.stageInstructions([]);
+
+        expect(rpcMocks.vaultTransactionCreate.mock.calls[0][0]).toMatchObject({
+            creator: members[0].publicKey,
+            rentPayer: members[0].publicKey,
+            signers: [],
+        });
+    });
+
     it('preserves immediate-send behavior as stage, approve, then execute', async () => {
         await expect(wallet.sendInstructions([])).resolves.toBe('vault-execute-signature');
 

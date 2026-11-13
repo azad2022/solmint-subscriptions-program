@@ -528,9 +528,12 @@ fn vnext_durable_nonce_authorization_is_rejected_after_generation_invalidation()
     );
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &revoke).assert_ok();
 
-    let revoked_registry = AuthorityConsentRegistry::load(&litesvm.get_account(&registry).unwrap().data).unwrap();
-    assert_eq!(revoked_registry.authority_generation, 2);
-    assert_eq!(revoked_registry.status, AUTHORITY_REGISTRY_REVOKED);
+    let revoked_registry_account = litesvm.get_account(&registry).unwrap();
+    let revoked_registry = AuthorityConsentRegistry::load(&revoked_registry_account.data).unwrap();
+    let revoked_generation = revoked_registry.authority_generation;
+    let revoked_status = revoked_registry.status;
+    assert_eq!(revoked_generation, 2);
+    assert_eq!(revoked_status, AUTHORITY_REGISTRY_REVOKED);
     assert!(litesvm.get_account(&authority).is_none());
 
     // Expire the ordinary recent blockhash explicitly. LiteSVM's Revoke
@@ -555,9 +558,12 @@ fn vnext_durable_nonce_authorization_is_rejected_after_generation_invalidation()
     assert!(litesvm.send_transaction(durable_nonce_replay).is_err());
     assert_eq!(read_initialized_nonce_hash(litesvm, &nonce_account), consumed_nonce_hash);
 
-    let final_registry = AuthorityConsentRegistry::load(&litesvm.get_account(&registry).unwrap().data).unwrap();
-    assert_eq!(final_registry.authority_generation, 2);
-    assert_eq!(final_registry.status, AUTHORITY_REGISTRY_REVOKED);
+    let final_registry_account = litesvm.get_account(&registry).unwrap();
+    let final_registry = AuthorityConsentRegistry::load(&final_registry_account.data).unwrap();
+    let final_generation = final_registry.authority_generation;
+    let final_status = final_registry.status;
+    assert_eq!(final_generation, 2);
+    assert_eq!(final_status, AUTHORITY_REGISTRY_REVOKED);
     assert!(litesvm.get_account(&authority).is_none());
     let source_state = fetch_account::<TokenAccount>(litesvm, &source);
     assert!(source_state.delegate.is_none());

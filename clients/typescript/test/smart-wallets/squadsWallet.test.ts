@@ -121,8 +121,8 @@ describe('SquadsSmartWallet staged proposal lifecycle', () => {
         expect(rpcMocks.vaultTransactionExecute.mock.calls[0][0].sendOptions).toEqual(sendOptions);
         expect(rpcMocks.vaultTransactionExecute.mock.calls[0][0]).toMatchObject({
             transactionIndex: 42n,
-            member: members[0].publicKey,
-            signers: [members[0]],
+            member: members[1].publicKey,
+            signers: [members[1]],
         });
     });
 

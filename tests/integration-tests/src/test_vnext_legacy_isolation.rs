@@ -793,20 +793,20 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
     );
 
     for (address, before, label) in [
-        (legacy_plan, legacy_plan_before, "legacy Plan"),
-        (legacy_subscription, legacy_subscription_before, "legacy Subscription"),
-        (vnext_plan, plan_before, "VNext Plan"),
-        (plan_registry, plan_registry_before, "Plan Revision Registry"),
-        (vnext_subscription, subscription_before, "VNext Subscription"),
-        (lifecycle_registry, lifecycle_before, "Subscription Lifecycle Registry"),
-        (authority_registry, authority_registry_before, "Authority Consent Registry"),
-        (vnext_authority, authority_before, "VNext Authority"),
-        (vnext_source, source_before, "VNext source token account"),
-        (subscriber_ata, subscriber_ata_before, "legacy ATA"),
-        (merchant_ata, merchant_ata_before, "merchant ATA"),
+        (legacy_plan, &legacy_plan_before, "legacy Plan"),
+        (legacy_subscription, &legacy_subscription_before, "legacy Subscription"),
+        (vnext_plan, &plan_before, "VNext Plan"),
+        (plan_registry, &plan_registry_before, "Plan Revision Registry"),
+        (vnext_subscription, &subscription_before, "VNext Subscription"),
+        (lifecycle_registry, &lifecycle_before, "Subscription Lifecycle Registry"),
+        (authority_registry, &authority_registry_before, "Authority Consent Registry"),
+        (vnext_authority, &authority_before, "VNext Authority"),
+        (vnext_source, &source_before, "VNext source token account"),
+        (subscriber_ata, &subscriber_ata_before, "legacy ATA"),
+        (merchant_ata, &merchant_ata_before, "merchant ATA"),
     ] {
         let after = litesvm.get_account(&address).unwrap();
-        assert_eq!(after.data, before.data, "{label} bytes changed after legacy attempts");
+        assert_eq!(after.data.as_slice(), before.data.as_slice(), "{label} bytes changed after legacy attempts");
         assert_eq!(after.lamports, before.lamports, "{label} lamports changed after legacy attempts");
         assert_eq!(after.owner, before.owner, "{label} owner changed after legacy attempts");
         assert_eq!(after.executable, before.executable, "{label} executable flag changed");

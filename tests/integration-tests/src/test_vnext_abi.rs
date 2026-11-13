@@ -42,11 +42,7 @@ fn assert_instruction_contract(
         "{idl_name}: discriminator drift"
     );
     assert_eq!(args[1]["type"]["kind"], "definedTypeLinkNode");
-    assert_eq!(
-        args[1]["type"]["name"],
-        payload_type,
-        "{idl_name}: payload type drift"
-    );
+    assert_eq!(args[1]["type"]["name"], payload_type, "{idl_name}: payload type drift");
 
     let actual_accounts: Vec<(String, bool, bool, bool)> = instruction["accounts"]
         .as_array()
@@ -64,9 +60,7 @@ fn assert_instruction_contract(
 
     let expected_accounts: Vec<(String, bool, bool, bool)> = expected_accounts
         .iter()
-        .map(|(name, signer, writable, optional)| {
-            ((*name).to_owned(), *signer, *writable, *optional)
-        })
+        .map(|(name, signer, writable, optional)| ((*name).to_owned(), *signer, *writable, *optional))
         .collect();
     assert_eq!(actual_accounts, expected_accounts, "{idl_name}: account-meta ABI drift");
 
@@ -173,12 +167,7 @@ fn vnext_integer_payloads_are_little_endian_golden_bytes() {
         expected_nonce: 0x1817_1615_1413_1211,
         not_after_ts: -2,
     };
-    assert_eq!(
-        bytes_of(&payload),
-        &[
-            1, 2, 3, 4, 5, 6, 7, 8, 17, 18, 19, 20, 21, 22, 23, 24, 254, 255, 255, 255, 255, 255, 255, 255,
-        ]
-    );
+    assert_eq!(bytes_of(&payload), &[1, 2, 3, 4, 5, 6, 7, 8, 17, 18, 19, 20, 21, 22, 23, 24, 254, 255, 255, 255, 255, 255, 255, 255,]);
 }
 
 #[test]

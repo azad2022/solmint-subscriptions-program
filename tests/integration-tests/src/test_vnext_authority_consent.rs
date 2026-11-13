@@ -577,23 +577,9 @@ fn vnext_durable_nonce_authorization_is_rejected_after_onchain_deadline() {
     let nonce_account = create_initialized_nonce_account(litesvm, subscriber, &nonce_authority);
     let original_nonce_hash = read_initialized_nonce_hash(litesvm, &nonce_account);
     let deadline = crate::tests::utils::current_ts() + 3_600;
-    let authorize = authorize_ix(
-        &subscriber.pubkey(),
-        registry,
-        authority,
-        mint,
-        source,
-        0,
-        0,
-        deadline,
-    );
-    let durable_nonce_transaction = sign_durable_nonce_authorization(
-        subscriber,
-        &nonce_authority,
-        &nonce_account,
-        original_nonce_hash,
-        &authorize,
-    );
+    let authorize = authorize_ix(&subscriber.pubkey(), registry, authority, mint, source, 0, 0, deadline);
+    let durable_nonce_transaction =
+        sign_durable_nonce_authorization(subscriber, &nonce_authority, &nonce_account, original_nonce_hash, &authorize);
     let durable_nonce_replay = durable_nonce_transaction.clone();
     let signing_slot = litesvm.get_sysvar::<solana_clock::Clock>().slot;
 

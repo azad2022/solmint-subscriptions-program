@@ -290,3 +290,124 @@ fn vnext_authorize_rejects_ata_source_account() {
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &revoke)
         .assert_err(SubscriptionsError::NonAssociatedSourceAccountRequired);
 }
+
+
+#[test]
+fn fn vnext_authority_consent_is_bound_to_exact_non_ata_source_account() {
+    let (litesvm, subscriber) = &mut setup();
+    let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, Some(subscriber.pubkey()), &[]);
+    let source_a = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);
+    let source_b = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);
+    assert_ne!(source_a, source_b);
+
+    let (registry_a, authority_a) = derive_vnext_accounts(&subscriber.pubkey(), &mint, &source_a);
+    let (registry_b, authority_b) = derive_vnext_accounts(&subscriber.pubkey(), &mint, &source_b);
+    assert_ne!(registry_a, registry_b);
+    assert_ne!(authority_a, authority_b);
+
+    let deadline = crate::tests::utils::current_ts() + 3_600;
+    let authorize_a = authorize_ix(
+        &subscriber.pubkey(),
+        registry_a,
+        authority_a,
+        mint,
+        source_a,
+        0,
+        0,
+        deadline,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize_a).assert_ok();
+
+    let source_a_state = fetch_account::<TokenAccount>(litesvm, &source_a);
+    assert_eq!(source_a_state.delegate, Some(authority_a));
+    assert_eq!(source_a_state.delegated_amount, u64::MAX);
+    assert!(litesvm.get_account(&registry_b).is_none());
+    assert!(litesvm.get_account(&authority_b).is_none());
+
+    // A Registry for source B cannot be paired with source A's Authority.
+    let cross_bound_authorize = authorize_ix(
+        &subscriber.pubkey(),
+        registry_b,
+        authority_a,
+        mint,
+        source_b,
+        0,
+        0,
+        deadline,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &cross_bound_authorize)
+        .assert_err(SubscriptionsError::VNextAuthorityInvalidPda);
+
+    // Source A's Registry cannot be replayed against source B, including for revoke.
+    let substituted_authorize = authorize_ix(
+        &subscriber.pubkey(),
+        registry_a,
+        authority_a,
+        mint,
+        source_b,
+        0,
+        0,
+        deadline,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &substituted_authorize)
+        .assert_err(SubscriptionsError::AuthorityConsentRegistryInvalidPda);
+
+    let substituted_revoke = revoke_ix(
+        &subscriber.pubkey(),
+        registry_a,
+        authority_a,
+        mint,
+        source_b,
+        1,
+        0,
+        deadline,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &substituted_revoke)
+        .assert_err(SubscriptionsError::AuthorityConsentRegistryInvalidPda);
+
+    let source_b_state = fetch_account::<TokenAccount>(litesvm, &source_b);
+    assert!(source_b_state.delegate.is_none());
+    assert_eq!(source_b_state.amount, 1_000_000);
+    assert!(litesvm.get_account(&registry_b).is_none());
+    assert!(litesvm.get_account(&authority_b).is_none());
+
+    // The second source can be authorized independently; revoking A must not
+    // revoke B because the persistent consent lineage is tuple-bound.
+    let authorize_b = authorize_ix(
+        &subscriber.pubkey(),
+        registry_b,
+        authority_b,
+        mint,
+        source_b,
+        0,
+        0,
+        deadline,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize_b).assert_ok();
+
+    let revoke_a = revoke_ix(
+        &subscriber.pubkey(),
+        registry_a,
+        authority_a,
+        mint,
+        source_a,
+        1,
+        0,
+        crate::tests::utils::current_ts() + 3_600,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &revoke_a).assert_ok();
+
+    let source_a_after_revoke = fetch_account::<TokenAccount>(litesvm, &source_a);
+    let source_b_after_revoke = fetch_account::<TokenAccount>(litesvm, &source_b);
+    assert!(source_a_after_revoke.delegate.is_none());
+    assert_eq!(source_a_after_revoke.delegated_amount, 0);
+    assert_eq!(source_b_after_revoke.delegate, Some(authority_b));
+    assert_eq!(source_b_after_revoke.delegated_amount, u64::MAX);
+
+    let registry_a_state = AuthorityConsentRegistry::load(&litesvm.get_account(&registry_a).unwrap().data).unwrap();
+    let registry_b_state = AuthorityConsentRegistry::load(&litesvm.get_account(&registry_b).unwrap().data).unwrap();
+    assert_eq!(registry_a_state.authority_generation, 2);
+    assert_eq!(registry_a_state.status, AUTHORITY_REGISTRY_REVOKED);
+    assert_eq!(registry_b_state.authority_generation, 1);
+    assert_eq!(registry_b_state.status, AUTHORITY_REGISTRY_ACTIVE);
+}

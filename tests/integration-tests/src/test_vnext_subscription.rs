@@ -50,10 +50,9 @@ fn instruction(discriminator: u8, payload: &[u8], accounts: Vec<AccountMeta>) ->
 fn assert_invalid_account_owner(result: litesvm::types::TransactionResult) {
     match result {
         Ok(_) => panic!("Expected missing VNext Authority PDA to fail account-owner validation"),
-        Err(failed) => assert_eq!(
-            failed.err,
-            TransactionError::InstructionError(0, InstructionError::InvalidAccountOwner)
-        ),
+        Err(failed) => {
+            assert_eq!(failed.err, TransactionError::InstructionError(0, InstructionError::InvalidAccountOwner))
+        }
     }
 }
 
@@ -889,7 +888,6 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     assert_eq!(get_ata_balance(litesvm, &destination), 100_000);
 }
 
-
 #[test]
 fn vnext_tombstone_invalidates_pending_authorize_and_subscribe() {
     let (litesvm, subscriber) = &mut setup();
@@ -907,33 +905,19 @@ fn vnext_tombstone_invalidates_pending_authorize_and_subscribe() {
 
     // A real Plan and its revision registry exist before the customer signs
     // Subscribe. Authority consent and the Subscription itself do not yet exist.
-    let (create, plan, plan_revision_registry) =
-        create_plan_ix(&merchant.pubkey(), mint, 7, TOKEN_PROGRAM_ID);
+    let (create, plan, plan_revision_registry) = create_plan_ix(&merchant.pubkey(), mint, 7, TOKEN_PROGRAM_ID);
     build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &create).assert_ok();
 
     let plan_address = to_address(&plan);
-    let subscription = to_pubkey(VNextSubscription::find_pda(
-        &plan_address,
-        &subscriber_address,
-        &source_address,
-    ).0);
-    let lifecycle_registry = to_pubkey(SubscriptionLifecycleRegistry::find_pda(
-        &plan_address,
-        &subscriber_address,
-        &source_address,
-    ).0);
+    let subscription = to_pubkey(VNextSubscription::find_pda(&plan_address, &subscriber_address, &source_address).0);
+    let lifecycle_registry =
+        to_pubkey(SubscriptionLifecycleRegistry::find_pda(&plan_address, &subscriber_address, &source_address).0);
     let plan_bump = VNextPlan::find_pda(&to_address(&merchant.pubkey()), 7).1;
     let plan_account = litesvm.get_account(&plan).unwrap();
     let created_at = VNextPlan::load(&plan_account.data).unwrap().data.terms.created_at;
 
-    let stale_authorize = authorize_ix(
-        &subscriber.pubkey(),
-        consent_registry,
-        authority,
-        mint,
-        source,
-        TOKEN_PROGRAM_ID,
-    );
+    let stale_authorize =
+        authorize_ix(&subscriber.pubkey(), consent_registry, authority, mint, source, TOKEN_PROGRAM_ID);
     let stale_subscribe = subscribe_ix(
         &subscriber.pubkey(),
         &merchant.pubkey(),
@@ -1000,9 +984,7 @@ fn vnext_tombstone_invalidates_pending_authorize_and_subscribe() {
 
     // Submit both exact customer-signed messages while their original
     // blockhash is still valid. Neither may recreate spend authority.
-    litesvm
-        .send_transaction(stale_authorize_signed)
-        .assert_err(SubscriptionsError::StaleAuthorityGeneration);
+    litesvm.send_transaction(stale_authorize_signed).assert_err(SubscriptionsError::StaleAuthorityGeneration);
     assert_invalid_account_owner(litesvm.send_transaction(stale_subscribe_signed));
 
     // Re-sign both obsolete payloads with a fresh blockhash. Their rejection

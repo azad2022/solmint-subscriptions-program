@@ -293,7 +293,7 @@ fn vnext_authorize_rejects_ata_source_account() {
 
 
 #[test]
-fn fn vnext_authority_consent_is_bound_to_exact_non_ata_source_account() {
+fn vnext_authority_consent_is_bound_to_exact_non_ata_source_account() {
     let (litesvm, subscriber) = &mut setup();
     let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, Some(subscriber.pubkey()), &[]);
     let source_a = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);

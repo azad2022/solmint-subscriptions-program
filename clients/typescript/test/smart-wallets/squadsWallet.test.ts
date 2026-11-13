@@ -28,6 +28,7 @@ describe('SquadsSmartWallet staged proposal lifecycle', () => {
     const blockhash = Keypair.generate().publicKey.toBase58();
     const connection = {
         getLatestBlockhash: vi.fn().mockResolvedValue({ blockhash }),
+        confirmTransaction: vi.fn().mockResolvedValue({ value: { err: null } }),
     } as unknown as Connection;
 
     let multisigRead: ReturnType<typeof vi.spyOn>;
@@ -86,6 +87,11 @@ describe('SquadsSmartWallet staged proposal lifecycle', () => {
             multisigPda,
             isDraft: false,
         });
+        expect(connection.confirmTransaction).toHaveBeenCalledTimes(2);
+        expect(connection.confirmTransaction.mock.calls.map(([signature]) => signature)).toEqual([
+            'vault-create-signature',
+            'proposal-create-signature',
+        ]);
         expect(rpcMocks.proposalApprove).not.toHaveBeenCalled();
         expect(rpcMocks.vaultTransactionExecute).not.toHaveBeenCalled();
         expect(staged).toEqual({
@@ -103,13 +109,16 @@ describe('SquadsSmartWallet staged proposal lifecycle', () => {
 
         await wallet.approveProposal(staged);
         expect(rpcMocks.proposalApprove).toHaveBeenCalledTimes(2);
+        expect(connection.confirmTransaction).toHaveBeenCalledTimes(2);
         expect(rpcMocks.proposalApprove.mock.calls.map(([args]) => args.member)).toEqual(
             members.slice(0, 2),
         );
         expect(rpcMocks.vaultTransactionExecute).not.toHaveBeenCalled();
 
-        await expect(wallet.executeProposal(staged)).resolves.toBe('vault-execute-signature');
+        const sendOptions = { skipPreflight: true };
+        await expect(wallet.executeProposal(staged, members[1], sendOptions)).resolves.toBe('vault-execute-signature');
         expect(rpcMocks.vaultTransactionExecute).toHaveBeenCalledOnce();
+        expect(rpcMocks.vaultTransactionExecute.mock.calls[0][0].sendOptions).toEqual(sendOptions);
         expect(rpcMocks.vaultTransactionExecute.mock.calls[0][0]).toMatchObject({
             transactionIndex: 42n,
             member: members[0].publicKey,
@@ -152,6 +161,7 @@ describe('SquadsSmartWallet staged proposal lifecycle', () => {
             'SQUADS_PROPOSAL_DUPLICATE_APPROVER',
         );
         expect(rpcMocks.proposalApprove).toHaveBeenCalledOnce();
+        expect(connection.confirmTransaction).toHaveBeenCalledOnce();
     });
 
     it('does not pass the creator twice when creator is also the fee payer', async () => {
@@ -190,5 +200,7 @@ describe('SquadsSmartWallet staged proposal lifecycle', () => {
         expect(rpcMocks.proposalApprove.mock.invocationCallOrder[1]).toBeLessThan(
             rpcMocks.vaultTransactionExecute.mock.invocationCallOrder[0],
         );
+        expect(connection.confirmTransaction).toHaveBeenCalledTimes(5);
+        expect(connection.confirmTransaction.mock.calls[4][0]).toBe('vault-execute-signature');
     });
 });

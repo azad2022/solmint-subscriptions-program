@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+import { Connection, Keypair } from '@solana/web3.js';
 import * as squads from '@sqds/multisig';
 import { SquadsSmartWallet, type StagedSquadsProposal } from './squadsWallet.ts';
 

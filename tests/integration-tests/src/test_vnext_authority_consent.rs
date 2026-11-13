@@ -515,7 +515,6 @@ fn vnext_durable_nonce_authorization_is_rejected_after_generation_invalidation()
     let durable_nonce_transaction =
         sign_durable_nonce_authorization(subscriber, &nonce_authority, &nonce_account, original_nonce_hash, &authorize);
     let durable_nonce_replay = durable_nonce_transaction.clone();
-    let signing_slot = litesvm.get_sysvar::<solana_clock::Clock>().slot;
 
     let revoke = revoke_ix(
         &subscriber.pubkey(),
@@ -534,10 +533,10 @@ fn vnext_durable_nonce_authorization_is_rejected_after_generation_invalidation()
     assert_eq!(revoked_registry.status, AUTHORITY_REGISTRY_REVOKED);
     assert!(litesvm.get_account(&authority).is_none());
 
-    // Move beyond the recent-blockhash validity window without crossing the
-    // on-chain action deadline. The normal transaction must now be expired,
-    // while the stored nonce remains a valid transaction freshness proof.
-    litesvm.warp_to_slot(signing_slot + 200);
+    // Expire the ordinary recent blockhash explicitly. LiteSVM's Revoke
+    // helper also rotates it, but this explicit call makes the test's premise
+    // independent of helper side effects. The action deadline remains valid.
+    litesvm.expire_blockhash();
     assert!(litesvm.get_sysvar::<solana_clock::Clock>().unix_timestamp < deadline);
     assert!(
         litesvm.send_transaction(recent_blockhash_transaction).is_err(),
@@ -581,11 +580,11 @@ fn vnext_durable_nonce_authorization_is_rejected_after_onchain_deadline() {
     let durable_nonce_transaction =
         sign_durable_nonce_authorization(subscriber, &nonce_authority, &nonce_account, original_nonce_hash, &authorize);
     let durable_nonce_replay = durable_nonce_transaction.clone();
-    let signing_slot = litesvm.get_sysvar::<solana_clock::Clock>().slot;
 
-    // A durable nonce keeps the signed transaction eligible at the runtime
-    // layer, but it must not extend the Program-approved action deadline.
-    litesvm.warp_to_slot(signing_slot + 200);
+    // Expire the ordinary recent blockhash and advance only the on-chain
+    // action clock. The stored nonce must still reach the Program, which
+    // enforces its original deadline independently of transaction freshness.
+    litesvm.expire_blockhash();
     crate::tests::utils::set_clock(litesvm, deadline + 1);
     assert!(litesvm.get_sysvar::<solana_clock::Clock>().unix_timestamp > deadline);
 

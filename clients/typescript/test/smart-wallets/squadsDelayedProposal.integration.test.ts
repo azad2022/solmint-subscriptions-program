@@ -9,6 +9,7 @@ import {
     SYSVAR_CLOCK_PUBKEY,
     Transaction,
     TransactionInstruction,
+    type VersionedTransactionResponse,
 } from '@solana/web3.js';
 import * as squads from '@sqds/multisig';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -432,7 +433,7 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
                 executionError = error;
             }
 
-            let failedTransaction = null;
+            let failedTransaction: VersionedTransactionResponse | null = null;
             if (executionSignature) {
                 try {
                     failedTransaction = await connection.getTransaction(executionSignature, {
@@ -453,7 +454,7 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
             } else {
                 const errorText = executionError instanceof Error
                     ? `${executionError.message} ${JSON.stringify(executionError)}`
-                    : JSON.stringify(executionError);
+                    : JSON.stringify(executionError) ?? String(executionError);
                 expect(errorText).toContain('143');
                 const errorWithLogs = executionError as {
                     logs?: string[];

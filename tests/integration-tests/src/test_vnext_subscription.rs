@@ -13,7 +13,7 @@ use crate::{
     },
     state::{
         common::PlanStatus, AuthorityConsentRegistry, PlanRevisionRegistry, SubscriptionLifecycleRegistry, VNextPlan,
-        VNextSubscription, VNextSubscriptionAuthority,
+        VNextSubscription, VNextSubscriptionAuthority, AUTHORITY_REGISTRY_REVOKED,
     },
     tests::{
         asserts::TransactionResultExt,
@@ -146,6 +146,36 @@ fn authorize_ix(
     data.extend_from_slice(&(current_ts() + 3_600).to_le_bytes());
     instruction(
         18,
+        &data[1..],
+        vec![
+            AccountMeta::new(*subscriber, true),
+            AccountMeta::new(registry, false),
+            AccountMeta::new(authority, false),
+            AccountMeta::new_readonly(mint, false),
+            AccountMeta::new(source, false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+            AccountMeta::new_readonly(token_program, false),
+        ],
+    )
+}
+
+fn revoke_authority_ix(
+    subscriber: &Pubkey,
+    registry: Pubkey,
+    authority: Pubkey,
+    mint: Pubkey,
+    source: Pubkey,
+    expected_generation: u64,
+    expected_nonce: u64,
+    not_after_ts: i64,
+    token_program: Pubkey,
+) -> Instruction {
+    let mut data = vec![19];
+    data.extend_from_slice(&expected_generation.to_le_bytes());
+    data.extend_from_slice(&expected_nonce.to_le_bytes());
+    data.extend_from_slice(&not_after_ts.to_le_bytes());
+    instruction(
+        19,
         &data[1..],
         vec![
             AccountMeta::new(*subscriber, true),
@@ -846,4 +876,155 @@ fn vnext_subscription_lifecycle_invalidates_delayed_subscribe_and_transfer() {
     assert_eq!(nonce, 5);
     assert_eq!(fetch_account::<TokenAccount>(litesvm, &source).amount, 900_000);
     assert_eq!(get_ata_balance(litesvm, &destination), 100_000);
+}
+
+
+#[test]
+fn vnext_tombstone_invalidates_pending_authorize_and_subscribe() {
+    let (litesvm, subscriber) = &mut setup();
+    let merchant = crate::tests::utils::init_wallet(litesvm, 10_000_000_000);
+    let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, Some(subscriber.pubkey()), &[]);
+    let source = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);
+
+    let subscriber_address = to_address(&subscriber.pubkey());
+    let mint_address = to_address(&mint);
+    let source_address = to_address(&source);
+    let consent_registry =
+        to_pubkey(AuthorityConsentRegistry::find_pda(&subscriber_address, &mint_address, &source_address).0);
+    let authority =
+        to_pubkey(VNextSubscriptionAuthority::find_pda(&subscriber_address, &mint_address, &source_address).0);
+
+    // A real Plan and its revision registry exist before the customer signs
+    // Subscribe. Authority consent and the Subscription itself do not yet exist.
+    let (create, plan, plan_revision_registry) =
+        create_plan_ix(&merchant.pubkey(), mint, 7, TOKEN_PROGRAM_ID);
+    build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &create).assert_ok();
+
+    let plan_address = to_address(&plan);
+    let subscription = to_pubkey(VNextSubscription::find_pda(
+        &plan_address,
+        &subscriber_address,
+        &source_address,
+    ).0);
+    let lifecycle_registry = to_pubkey(SubscriptionLifecycleRegistry::find_pda(
+        &plan_address,
+        &subscriber_address,
+        &source_address,
+    ).0);
+    let plan_bump = VNextPlan::find_pda(&to_address(&merchant.pubkey()), 7).1;
+    let plan_account = litesvm.get_account(&plan).unwrap();
+    let created_at = VNextPlan::load(&plan_account.data).unwrap().data.terms.created_at;
+
+    let stale_authorize = authorize_ix(
+        &subscriber.pubkey(),
+        consent_registry,
+        authority,
+        mint,
+        source,
+        TOKEN_PROGRAM_ID,
+    );
+    let stale_subscribe = subscribe_ix(
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        mint,
+        source,
+        plan_bump,
+        created_at,
+        0,
+        0,
+        TOKEN_PROGRAM_ID,
+    );
+
+    // Both customer approvals are held against the same still-valid recent
+    // blockhash. The Subscribe payload expects generation 1, which the pending
+    // Authorize would create if it landed first.
+    let original_blockhash = litesvm.latest_blockhash();
+    let stale_authorize_signed = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&stale_authorize), Some(&subscriber.pubkey())),
+        original_blockhash,
+    );
+    let stale_subscribe_signed = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&stale_subscribe), Some(&subscriber.pubkey())),
+        original_blockhash,
+    );
+
+    // Invalidate generation 1 before either held approval is submitted. With
+    // no Registry or Authority yet, Revoke must create a persistent tombstone.
+    let revoke = revoke_authority_ix(
+        &subscriber.pubkey(),
+        consent_registry,
+        authority,
+        mint,
+        source,
+        1,
+        0,
+        current_ts() + 3_600,
+        TOKEN_PROGRAM_ID,
+    );
+    let revoke_signed = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&revoke), Some(&subscriber.pubkey())),
+        original_blockhash,
+    );
+    litesvm.send_transaction(revoke_signed).assert_ok();
+
+    let registry_account = litesvm.get_account(&consent_registry).unwrap();
+    let registry = AuthorityConsentRegistry::load(&registry_account.data).unwrap();
+    let generation = registry.authority_generation;
+    let status = registry.status;
+    let authorize_nonce = registry.authorize_nonce;
+    let revoke_nonce = registry.revoke_nonce;
+    assert_eq!(generation, 2);
+    assert_eq!(status, AUTHORITY_REGISTRY_REVOKED);
+    assert_eq!(authorize_nonce, 0);
+    assert_eq!(revoke_nonce, 1);
+
+    // Submit both exact customer-signed messages while their original
+    // blockhash is still valid. Neither may recreate spend authority.
+    litesvm
+        .send_transaction(stale_authorize_signed)
+        .assert_err(SubscriptionsError::StaleAuthorityGeneration);
+    litesvm
+        .send_transaction(stale_subscribe_signed)
+        .assert_err(SubscriptionsError::Unauthorized);
+
+    // Re-sign both obsolete payloads with a fresh blockhash. Their rejection
+    // must come from persistent Registry state, not blockhash expiry.
+    litesvm.expire_blockhash();
+    let replayed_authorize = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&stale_authorize), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(replayed_authorize).assert_err(SubscriptionsError::StaleAuthorityGeneration);
+
+    let replayed_subscribe = Transaction::new(
+        &[&*subscriber],
+        Message::new(std::slice::from_ref(&stale_subscribe), Some(&subscriber.pubkey())),
+        litesvm.latest_blockhash(),
+    );
+    litesvm.send_transaction(replayed_subscribe).assert_err(SubscriptionsError::Unauthorized);
+
+    let registry_account = litesvm.get_account(&consent_registry).unwrap();
+    let registry = AuthorityConsentRegistry::load(&registry_account.data).unwrap();
+    let generation_after_replays = registry.authority_generation;
+    let status_after_replays = registry.status;
+    assert_eq!(generation_after_replays, 2);
+    assert_eq!(status_after_replays, AUTHORITY_REGISTRY_REVOKED);
+    assert!(litesvm.get_account(&authority).is_none());
+    assert!(litesvm.get_account(&subscription).is_none());
+    assert!(litesvm.get_account(&lifecycle_registry).is_none());
+
+    let source_state = fetch_account::<TokenAccount>(litesvm, &source);
+    assert_eq!(source_state.amount, 1_000_000);
+    assert!(source_state.delegate.is_none());
+    assert_eq!(source_state.delegated_amount, 0);
 }

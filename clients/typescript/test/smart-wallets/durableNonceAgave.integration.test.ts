@@ -8,6 +8,7 @@ import {
     SYSVAR_CLOCK_PUBKEY,
     Transaction,
     TransactionInstruction,
+    sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -21,6 +22,7 @@ const RPC_URL = 'http://127.0.0.1:8899';
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const PROGRAM_ADDRESS = new PublicKey(PROGRAM_ID);
 const NONCE_LIFETIME_SECONDS = 3_600n;
+const NONCE_ACCOUNT_SIZE = 80;
 
 let validator: ChildProcess | undefined;
 let validatorLogs = '';
@@ -274,17 +276,15 @@ suite('VNext durable nonce semantics on the real Agave test validator', () => {
             );
             expect(nonSignerAirdropConfirmation.value.err).toBeNull();
 
-            const nonceRent = await rpc.getMinimumBalanceForRentExemption(NonceAccount.fromAccountData.length ?? 80);
+            const nonceRent = await rpc.getMinimumBalanceForRentExemption(NONCE_ACCOUNT_SIZE);
             const nonceCreation = SystemProgram.createNonceAccount({
                 fromPubkey: subscriber.publicKey,
                 noncePubkey: nonceAccount.publicKey,
                 authorizedPubkey: nonceAuthority.publicKey,
                 lamports: nonceRent,
             });
-            await import('@solana/web3.js').then(async ({ sendAndConfirmTransaction }) => {
-                await sendAndConfirmTransaction(rpc, nonceCreation, [subscriber, nonceAccount], {
-                    commitment: 'confirmed',
-                });
+            await sendAndConfirmTransaction(rpc, nonceCreation, [subscriber, nonceAccount], {
+                commitment: 'confirmed',
             });
 
             const nonceAccountInfo = await rpc.getAccountInfo(nonceAccount.publicKey, 'confirmed');

@@ -72,9 +72,9 @@ async function readClockTimestamp(connection: Connection): Promise<bigint> {
 async function advanceClockPast(
     connection: Connection,
     feePayer: Keypair,
+    recipient: PublicKey,
     deadline: bigint,
 ): Promise<bigint> {
-    const recipient = Keypair.generate().publicKey;
     const stopAt = Date.now() + 30_000;
     let current = await readClockTimestamp(connection);
 
@@ -412,7 +412,7 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
             ]);
             await wallet.approveProposal(delayedAuthorize);
 
-            const current = await advanceClockPast(connection, feePayer, deadline);
+            const current = await advanceClockPast(connection, feePayer, members[0].publicKey, deadline);
             expect(current).toBeGreaterThan(deadline);
 
             const staleSignature = await wallet.executeProposal(

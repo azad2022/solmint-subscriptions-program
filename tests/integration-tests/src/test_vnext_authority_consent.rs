@@ -309,7 +309,7 @@ fn vnext_authority_consent_is_bound_to_exact_non_ata_source_account() {
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize_a).assert_ok();
 
     let source_a_state = fetch_account::<TokenAccount>(litesvm, &source_a);
-    assert_eq!(source_a_state.delegate, Some(authority_a));
+    assert_eq!(source_a_state.delegate.unwrap(), authority_a);
     assert_eq!(source_a_state.delegated_amount, u64::MAX);
     assert!(litesvm.get_account(&registry_b).is_none());
     assert!(litesvm.get_account(&authority_b).is_none());
@@ -357,7 +357,7 @@ fn vnext_authority_consent_is_bound_to_exact_non_ata_source_account() {
     let source_b_after_revoke = fetch_account::<TokenAccount>(litesvm, &source_b);
     assert!(source_a_after_revoke.delegate.is_none());
     assert_eq!(source_a_after_revoke.delegated_amount, 0);
-    assert_eq!(source_b_after_revoke.delegate, Some(authority_b));
+    assert_eq!(source_b_after_revoke.delegate.unwrap(), authority_b);
     assert_eq!(source_b_after_revoke.delegated_amount, u64::MAX);
 
     let registry_a_account = litesvm.get_account(&registry_a).unwrap();
@@ -431,6 +431,6 @@ fn vnext_authority_consent_rejects_multiple_remaining_accounts_atomically() {
 
     assert!(litesvm.get_account(&authority).is_some());
     let source_after_failed_revoke = fetch_account::<TokenAccount>(litesvm, &source);
-    assert_eq!(source_after_failed_revoke.delegate, Some(authority));
+    assert_eq!(source_after_failed_revoke.delegate.unwrap(), authority);
     assert_eq!(source_after_failed_revoke.delegated_amount, u64::MAX);
 }

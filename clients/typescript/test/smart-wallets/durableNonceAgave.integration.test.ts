@@ -75,26 +75,20 @@ async function waitForValidator(child: ChildProcess, rpc: Connection): Promise<v
 }
 
 async function stopValidator(): Promise<void> {
-    if (connection) {
-        try {
-            await connection.close();
-        } catch {
-            // The validator process is still terminated below.
-        }
-        connection = undefined;
-    }
+    // This test uses only request/response RPC calls; there are no subscriptions
+    // or websocket listeners to close on the Connection instance.
+    connection = undefined;
 
-    if (validator && validator.exitCode === null) {
+    if (validator && validator.exitCode === null && validator.signalCode === null) {
         const child = validator;
-        child.kill('SIGTERM');
-        await Promise.race([
-            new Promise<void>(resolveExit => child.once('exit', () => resolveExit())),
-            new Promise<void>(resolveTimeout => setTimeout(resolveTimeout, 10_000)),
-        ]);
-        if (child.exitCode === null) {
-            child.kill('SIGKILL');
-            await new Promise<void>(resolveExit => child.once('exit', () => resolveExit()));
-        }
+        await new Promise<void>(resolveExit => {
+            const killTimer = setTimeout(() => child.kill('SIGKILL'), 10_000);
+            child.once('exit', () => {
+                clearTimeout(killTimer);
+                resolveExit();
+            });
+            child.kill('SIGTERM');
+        });
     }
     validator = undefined;
 
@@ -227,7 +221,6 @@ suite('VNext durable nonce semantics on the real Agave test validator', () => {
             'solana-test-validator',
             [
                 '--reset',
-                '--quiet',
                 '--ledger',
                 ledgerPath,
                 '--rpc-port',

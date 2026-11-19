@@ -4,8 +4,7 @@ use crate::instructions::{
     authorize_subscription_authority_vnext, cancel_subscription, cancel_subscription_now, create_plan, delete_plan,
     emit_event, legacy_subscription_authority_vnext, resume_subscription, revoke_abandoned_delegation,
     revoke_abandoned_subscription, revoke_delegation, revoke_subscription_authority_vnext, transfer_subscription,
-    update_plan, vnext_plan, vnext_subscription,
-    SubscriptionsInstruction,
+    update_plan, vnext_plan, vnext_subscription, SubscriptionsInstruction,
 };
 
 entrypoint!(process_instruction);

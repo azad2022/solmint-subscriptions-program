@@ -190,7 +190,7 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
     let subscription_init_id = subscription_state.header.init_id;
     assert_eq!(subscription_init_id, old_init_id);
     let token_after_bootstrap = crate::tests::utils::fetch_account::<TokenAccount>(litesvm, &source);
-    assert_eq!(token_after_bootstrap.delegate, Some(authority));
+    assert_eq!(token_after_bootstrap.delegate, Some(authority).into());
     assert_eq!(token_after_bootstrap.delegated_amount, u64::MAX);
 
     // Prove the existing legacy Subscription remains usable through the new

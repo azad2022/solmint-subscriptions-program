@@ -1,3 +1,5 @@
+use codama::CodamaType;
+use core::mem::{size_of, transmute};
 use pinocchio::{
     error::ProgramError,
     sysvars::{clock::Clock, Sysvar},
@@ -9,7 +11,13 @@ use crate::{
     event_engine::{self, EventSerialize},
     events::SubscriptionTransferEvent,
     helpers::{transfer_with_delegate, validate_recurring_transfer, TransferAccounts, TransferData},
-    state::{common::AccountDiscriminator, plan::Plan, subscription_delegation::SubscriptionDelegation},
+    state::{
+        common::AccountDiscriminator,
+        plan::Plan,
+        subscription_authority::SubscriptionAuthority,
+        subscription_delegation::SubscriptionDelegation,
+        AuthorityConsentRegistry, AUTHORITY_REGISTRY_ACTIVE,
+    },
     AccountCheck, MintInterface, ProgramAccount, SignerAccount, SubscriptionAuthorityAccount, SubscriptionsError,
     TokenAccountInterface, TokenProgramInterface, WritableAccount,
 };
@@ -202,4 +210,170 @@ impl<'a> TryFrom<&'a mut [AccountView]> for TransferSubscriptionAccounts<'a> {
             remaining,
         })
     }
+}
+
+/// Generation- and billing-snapshot-bound transfer for a migrated v0.5.0
+/// SubscriptionDelegation. The original Subscription PDA and its period
+/// accounting remain unchanged; the permanent Authority Registry gates every
+/// collection attempt and the old Authority init_id is checked before the
+/// legacy transfer core is called.
+#[repr(C, packed)]
+#[derive(CodamaType, Debug, Clone)]
+pub struct LegacySubscriptionTransferV2Data {
+    pub amount: u64,
+    pub delegator: Address,
+    pub mint: Address,
+    pub expected_current_period_start_ts: i64,
+    pub expected_amount_pulled_in_period: u64,
+    pub expected_authority_generation: u64,
+    pub not_after_ts: i64,
+}
+
+impl LegacySubscriptionTransferV2Data {
+    pub const LEN: usize = size_of::<Self>();
+
+    pub fn load(data: &[u8]) -> Result<&Self, ProgramError> {
+        if data.len() != Self::LEN {
+            return Err(SubscriptionsError::InvalidInstructionData.into());
+        }
+        Ok(unsafe { &*transmute::<*const u8, *const Self>(data.as_ptr()) })
+    }
+}
+
+fn project_legacy_period_snapshot(
+    current_start_ts: i64,
+    amount_pulled: u64,
+    period_length_s: u64,
+    now_ts: i64,
+) -> Result<(i64, u64), ProgramError> {
+    let period_length = i64::try_from(period_length_s).map_err(|_| SubscriptionsError::ArithmeticOverflow)?;
+    if period_length <= 0 || now_ts < current_start_ts {
+        return Err(SubscriptionsError::InvalidPeriodLength.into());
+    }
+    let elapsed = now_ts.checked_sub(current_start_ts).ok_or(SubscriptionsError::ArithmeticOverflow)?;
+    let periods_elapsed = elapsed / period_length;
+    let offset = periods_elapsed.checked_mul(period_length).ok_or(SubscriptionsError::ArithmeticOverflow)?;
+    let projected_start = current_start_ts.checked_add(offset).ok_or(SubscriptionsError::ArithmeticOverflow)?;
+    if periods_elapsed == 0 {
+        Ok((projected_start, amount_pulled))
+    } else {
+        Ok((projected_start, 0))
+    }
+}
+
+/// New discriminator path for existing legacy subscriptions after their
+/// Authority has been lazily migrated to the persistent generation Registry.
+///
+/// Account order is the legacy TransferSubscription account list (10 accounts),
+/// then the read-only AuthorityConsentRegistry, followed by any transfer-hook
+/// remaining accounts. The Registry is removed before delegating to the old
+/// transfer core, so all legacy Plan, Subscription and event semantics remain
+/// unchanged.
+pub fn process_legacy_vnext_v2(
+    accounts: &mut [AccountView],
+    data: &LegacySubscriptionTransferV2Data,
+) -> ProgramResult {
+    let [
+        subscription_pda,
+        plan_pda,
+        authority_pda,
+        source_token_account,
+        _receiver_ata,
+        _caller,
+        token_mint,
+        token_program,
+        _event_authority,
+        _self_program,
+        registry,
+        _remaining @ ..
+    ] = accounts
+    else {
+        return Err(SubscriptionsError::NotEnoughAccountKeys.into());
+    };
+
+    let amount = data.amount;
+    let delegator = data.delegator;
+    let mint = data.mint;
+    let expected_period_start = data.expected_current_period_start_ts;
+    let expected_amount_pulled = data.expected_amount_pulled_in_period;
+    let expected_generation = data.expected_authority_generation;
+    let not_after_ts = data.not_after_ts;
+
+    if *token_mint.address() != mint {
+        return Err(SubscriptionsError::MintMismatch.into());
+    }
+    TokenProgramInterface::check(token_program)?;
+    MintInterface::check_with_program(token_mint, token_program)?;
+    TokenAccountInterface::check_with_program(source_token_account, token_program)?;
+
+    let now_ts = Clock::get()?.unix_timestamp;
+    AuthorityConsentRegistry::validate_action_deadline(now_ts, not_after_ts)?;
+
+    let expected_registry =
+        AuthorityConsentRegistry::find_pda(&delegator, &mint, source_token_account.address()).0;
+    if expected_registry != *registry.address() {
+        return Err(SubscriptionsError::AuthorityConsentRegistryInvalidPda.into());
+    }
+    ProgramAccount::check(registry)?;
+    {
+        let bytes = registry.try_borrow()?;
+        let consent = AuthorityConsentRegistry::load(&bytes)?;
+        consent.validate_identity(
+            registry.address(),
+            &delegator,
+            &mint,
+            source_token_account.address(),
+            token_program.address(),
+        )?;
+        if consent.status != AUTHORITY_REGISTRY_ACTIVE || consent.authority_generation != expected_generation {
+            return Err(SubscriptionsError::StaleAuthorityGeneration.into());
+        }
+    }
+
+    let (expected_authority, _) = SubscriptionAuthority::find_pda(&delegator, &mint);
+    if expected_authority != *authority_pda.address() {
+        return Err(SubscriptionsError::InvalidSubscriptionAuthorityPda.into());
+    }
+    ProgramAccount::check(authority_pda)?;
+    {
+        let bytes = authority_pda.try_borrow()?;
+        let authority = SubscriptionAuthority::load(&bytes)?;
+        authority.check_owner(&delegator)?;
+        if authority.token_mint != mint {
+            return Err(SubscriptionsError::MintMismatch.into());
+        }
+        let bump = authority.bump;
+        if SubscriptionAuthority::verify_pda(&delegator, &mint, bump)? != expected_authority {
+            return Err(SubscriptionsError::InvalidSubscriptionAuthorityPda.into());
+        }
+
+        let sub_bytes = subscription_pda.try_borrow()?;
+        let subscription = SubscriptionDelegation::load_for_revoke(&sub_bytes)?;
+        if subscription.header.delegator != delegator
+            || subscription.header.delegatee != *plan_pda.address()
+            || subscription.header.init_id != authority.init_id
+        {
+            return Err(SubscriptionsError::StaleSubscriptionAuthority.into());
+        }
+
+        let period_length = subscription.terms.period_length_secs()?;
+        let projected = project_legacy_period_snapshot(
+            subscription.current_period_start_ts,
+            subscription.amount_pulled_in_period,
+            period_length,
+            now_ts,
+        )?;
+        if projected.0 != expected_period_start || projected.1 != expected_amount_pulled {
+            return Err(SubscriptionsError::StaleSubscriptionTransferSnapshot.into());
+        }
+    }
+
+    let transfer = TransferData { amount, delegator, mint };
+    let mut legacy_accounts: alloc::vec::Vec<AccountView> = accounts
+        .iter()
+        .enumerate()
+        .filter_map(|(index, account)| if index == 10 { None } else { Some(*account) })
+        .collect();
+
+    process(&mut legacy_accounts, &transfer)
 }

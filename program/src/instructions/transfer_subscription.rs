@@ -334,7 +334,8 @@ pub fn process_legacy_vnext_v2(accounts: &mut [AccountView], data: &LegacySubscr
     let plan_end_ts = {
         let plan_bytes = plan_pda.try_borrow()?;
         let plan = Plan::load(&plan_bytes)?;
-        if plan.data.mint != mint {
+        let plan_mint = plan.data.mint;
+        if plan_mint != mint {
             return Err(SubscriptionsError::MintMismatch.into());
         }
         let end_ts = plan.data.end_ts;

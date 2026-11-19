@@ -25,18 +25,6 @@ pub const AUTHORIZE_DISCRIMINATOR: &u8 = &28;
 /// Generation-bound replacement for the old Revoke/Close Authority routes.
 pub const REVOKE_DISCRIMINATOR: &u8 = &29;
 
-/// Legacy v0.5.0 init_ids are non-negative Clock slots. Mapping a positive
-/// generation into the negative i64 range guarantees that no pre-migration
-/// delegation header can match a reauthorized Authority, including same-slot
-/// close/recreate. i64::MIN is reserved as UNKNOWN_INIT_ID and never returned.
-fn generation_init_id(generation: u64) -> Result<i64, SubscriptionsError> {
-    let generation = i64::try_from(generation).map_err(|_| SubscriptionsError::ArithmeticOverflow)?;
-    if generation == 0 {
-        return Err(SubscriptionsError::ArithmeticOverflow);
-    }
-    i64::MIN.checked_add(generation).ok_or(SubscriptionsError::ArithmeticOverflow)
-}
-
 fn validate_legacy_authority(
     authority: &AccountView,
     subscriber: &Address,
@@ -165,43 +153,6 @@ fn validate_registry(
     Ok(state.status)
 }
 
-fn create_or_reauthorize_legacy_authority(
-    subscriber: &AccountView,
-    authority: &AccountView,
-    mint: &AccountView,
-    payer: &AccountView,
-    generation: u64,
-) -> ProgramResult {
-    if authority.data_len() != 0 {
-        return Err(SubscriptionsError::AuthorityConsentRegistryIdentityMismatch.into());
-    }
-    let (expected, bump) = SubscriptionAuthority::find_pda(subscriber.address(), mint.address());
-    if expected != *authority.address() {
-        return Err(SubscriptionsError::InvalidSubscriptionAuthorityPda.into());
-    }
-
-    let init_id = generation_init_id(generation)?;
-    let bump_bytes = [bump];
-    let seeds = [
-        Seed::from(SubscriptionAuthority::SEED),
-        Seed::from(subscriber.address().as_ref()),
-        Seed::from(mint.address().as_ref()),
-        Seed::from(&bump_bytes),
-    ];
-    ProgramAccount::init::<SubscriptionAuthority>(payer, authority, &seeds, SubscriptionAuthority::LEN)?;
-
-    let mut bytes = authority.try_borrow_mut()?;
-    SubscriptionAuthority::init(
-        &mut bytes,
-        subscriber.address(),
-        mint.address(),
-        payer.address(),
-        bump,
-        init_id,
-    )?;
-    Ok(())
-}
-
 /// First call for a live v0.5.0 Authority lazily bootstraps the Registry at
 /// generation 1 without changing Authority bytes or re-approving the delegate.
 /// That leaves existing active SubscriptionDelegation accounts collectable.
@@ -221,10 +172,9 @@ pub fn process_authorize(accounts: &mut [AccountView], data: &AuthorityActionDat
     MintInterface::check_with_program(mint, token_program)?;
     TokenAccountInterface::check_with_program(source, token_program)?;
 
-    if rem.len() > 1 {
+    if !rem.is_empty() {
         return Err(SubscriptionsError::InvalidInstructionData.into());
     }
-    let authority_payer = resolve_optional_payer(subscriber, rem)?;
     let now = Clock::get()?.unix_timestamp;
     AuthorityConsentRegistry::validate_action_deadline(now, data.not_after_ts)?;
 
@@ -235,72 +185,40 @@ pub fn process_authorize(accounts: &mut [AccountView], data: &AuthorityActionDat
     let existing_payer = validate_legacy_authority(authority, subscriber.address(), mint.address())?;
     let delegate = validate_source(subscriber, mint, source, token_program, false)?;
 
-    if delegate.is_some_and(|value| value != expected_authority) {
-        return Err(SubscriptionsError::ForeignTokenDelegatePresent.into());
+    if existing_payer.is_none() || delegate != Some(expected_authority) {
+        // A new or re-created legacy permission is never granted by this
+        // compatibility instruction. Fresh consent must use the independent
+        // VNext non-ATA Authority route and its own Registry lineage.
+        return Err(SubscriptionsError::LegacyInstructionDisabled.into());
     }
 
-    if registry.data_len() == 0 {
-        if existing_payer.is_some() {
-            if delegate != Some(expected_authority) || data.expected_generation != 0 || data.expected_nonce != 0 {
-                return Err(SubscriptionsError::AuthorityConsentRegistryIdentityMismatch.into());
-            }
-            initialize_registry(
-                subscriber,
-                registry,
-                mint,
-                source,
-                token_program,
-                1,
-                AUTHORITY_REGISTRY_ACTIVE,
-                1,
-            )?;
-            // This is a migration-only no-op for the live legacy delegate.
-            return Ok(());
-        }
-
-        initialize_registry(
-            subscriber,
-            registry,
-            mint,
-            source,
-            token_program,
-            0,
-            AUTHORITY_REGISTRY_REVOKED,
-            0,
-        )?;
-    } else {
+    if registry.data_len() != 0 {
         let status = validate_registry(registry, subscriber, mint, source, token_program)?;
-        if status == AUTHORITY_REGISTRY_ACTIVE {
-            return Err(SubscriptionsError::AuthorityAlreadyActive.into());
-        }
-        if status != AUTHORITY_REGISTRY_REVOKED || delegate.is_some() || existing_payer.is_some() {
-            return Err(SubscriptionsError::AuthorityConsentRegistryIdentityMismatch.into());
-        }
+        return if status == AUTHORITY_REGISTRY_ACTIVE {
+            Err(SubscriptionsError::AuthorityAlreadyActive.into())
+        } else {
+            Err(SubscriptionsError::LegacyInstructionDisabled.into())
+        };
     }
 
-    let generation = {
-        let mut bytes = registry.try_borrow_mut()?;
-        let state = AuthorityConsentRegistry::load_mut(&mut bytes)?;
-        state.authorize(data.expected_generation, data.expected_nonce, now, data.not_after_ts)?
-    };
-
-    create_or_reauthorize_legacy_authority(subscriber, authority, mint, authority_payer, generation)?;
-
-    if token_program.address() == &TOKEN_2022_PROGRAM_ID {
-        Approve2022 {
-            token_program: token_program.address(),
-            source,
-            delegate: authority,
-            authority: subscriber,
-            amount: u64::MAX,
-        }
-        .invoke()?;
-    } else {
-        ApproveSpl::new(source, authority, subscriber, u64::MAX).invoke()?;
+    if data.expected_generation != 0 || data.expected_nonce != 0 {
+        return Err(SubscriptionsError::AuthorityConsentRegistryIdentityMismatch.into());
     }
-    Ok(())
+
+    // One-time capability-preserving migration. Do not touch Authority bytes,
+    // do not re-Approve u64::MAX, and do not rewrite existing Subscription PDAs.
+    initialize_registry(
+        subscriber,
+        registry,
+        mint,
+        source,
+        token_program,
+        1,
+        AUTHORITY_REGISTRY_ACTIVE,
+        1,
+    )
 }
-
+ 
 /// Revokes one Legacy Authority generation atomically with Registry advancement,
 /// token delegate revocation and Authority closure. Existing Subscription and
 /// Plan PDAs remain intact but cannot collect after this transition; later

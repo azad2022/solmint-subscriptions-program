@@ -271,11 +271,11 @@ fn project_legacy_period_snapshot(
         } else {
             let last_billable = expiry_ts.checked_sub(1).ok_or(SubscriptionsError::ArithmeticUnderflow)?;
             if last_billable >= projected_start {
-                let span = last_billable
-                    .checked_sub(projected_start)
-                    .ok_or(SubscriptionsError::ArithmeticUnderflow)?;
-                let periods_in_bounds = span.checked_div(period_length).ok_or(SubscriptionsError::InvalidPeriodLength)?;
-                let increment = periods_in_bounds.checked_mul(period_length).ok_or(SubscriptionsError::ArithmeticOverflow)?;
+                let span = last_billable.checked_sub(projected_start).ok_or(SubscriptionsError::ArithmeticUnderflow)?;
+                let periods_in_bounds =
+                    span.checked_div(period_length).ok_or(SubscriptionsError::InvalidPeriodLength)?;
+                let increment =
+                    periods_in_bounds.checked_mul(period_length).ok_or(SubscriptionsError::ArithmeticOverflow)?;
                 let last_in_bounds_start =
                     projected_start.checked_add(increment).ok_or(SubscriptionsError::ArithmeticOverflow)?;
                 if last_in_bounds_start > projected_start {

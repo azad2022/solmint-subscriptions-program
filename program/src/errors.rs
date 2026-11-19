@@ -72,6 +72,7 @@ impl TryFrom<u32> for SubscriptionsError {
             154 => Ok(Self::ForeignTokenDelegatePresent),
             155 => Ok(Self::LegacyVNextTransferDisabled),
             156 => Ok(Self::StaleSubscriptionTransferSnapshot),
+            157 => Ok(Self::LegacyInstructionDisabled),
             // Fixed delegation errors (300-399)
             300 => Ok(Self::AmountExceedsLimit),
             301 => Ok(Self::FixedDelegationExpiryInPast),
@@ -263,6 +264,8 @@ pub enum SubscriptionsError {
     LegacyVNextTransferDisabled = 155,
     #[error("Subscription transfer billing-period snapshot is stale or already consumed")]
     StaleSubscriptionTransferSnapshot = 156,
+    #[error("Unversioned legacy Authority or permission instruction is disabled; use the generation-bound VNext route")]
+    LegacyInstructionDisabled = 157,
 
     // --- Fixed delegation errors (300--399) ---
     #[error("Transfer amount exceeds delegation limit")]

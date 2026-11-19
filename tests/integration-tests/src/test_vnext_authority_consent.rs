@@ -242,7 +242,7 @@ fn vnext_authorize_and_revoke_preserve_persistent_generation() {
     let authority_generation = authority_state.authority_generation;
     assert_eq!(authority_generation, 3);
     let source_after_reauthorize = fetch_account::<TokenAccount>(litesvm, &source);
-    assert_eq!(source_after_reauthorize.delegate, Some(authority));
+    assert_eq!(source_after_reauthorize.delegate, Some(authority).into());
     assert_eq!(source_after_reauthorize.delegated_amount, u64::MAX);
 }
 

@@ -264,7 +264,9 @@ pub enum SubscriptionsError {
     LegacyVNextTransferDisabled = 155,
     #[error("Subscription transfer billing-period snapshot is stale or already consumed")]
     StaleSubscriptionTransferSnapshot = 156,
-    #[error("Unversioned legacy Authority or permission instruction is disabled; use the generation-bound VNext route")]
+    #[error(
+        "Unversioned legacy Authority or permission instruction is disabled; use the generation-bound VNext route"
+    )]
     LegacyInstructionDisabled = 157,
 
     // --- Fixed delegation errors (300--399) ---

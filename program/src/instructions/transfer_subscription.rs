@@ -12,11 +12,8 @@ use crate::{
     events::SubscriptionTransferEvent,
     helpers::{transfer_with_delegate, validate_recurring_transfer, TransferAccounts, TransferData},
     state::{
-        common::AccountDiscriminator,
-        plan::Plan,
-        subscription_authority::SubscriptionAuthority,
-        subscription_delegation::SubscriptionDelegation,
-        AuthorityConsentRegistry, AUTHORITY_REGISTRY_ACTIVE,
+        common::AccountDiscriminator, plan::Plan, subscription_authority::SubscriptionAuthority,
+        subscription_delegation::SubscriptionDelegation, AuthorityConsentRegistry, AUTHORITY_REGISTRY_ACTIVE,
     },
     AccountCheck, MintInterface, ProgramAccount, SignerAccount, SubscriptionAuthorityAccount, SubscriptionsError,
     TokenAccountInterface, TokenProgramInterface, WritableAccount,
@@ -271,24 +268,9 @@ fn project_legacy_period_snapshot(
 /// remaining accounts. The Registry is removed before delegating to the old
 /// transfer core, so all legacy Plan, Subscription and event semantics remain
 /// unchanged.
-pub fn process_legacy_vnext_v2(
-    accounts: &mut [AccountView],
-    data: &LegacySubscriptionTransferV2Data,
-) -> ProgramResult {
-    let [
-        subscription_pda,
-        plan_pda,
-        authority_pda,
-        source_token_account,
-        _receiver_ata,
-        _caller,
-        token_mint,
-        token_program,
-        _event_authority,
-        _self_program,
-        registry,
-        _remaining @ ..
-    ] = accounts
+pub fn process_legacy_vnext_v2(accounts: &mut [AccountView], data: &LegacySubscriptionTransferV2Data) -> ProgramResult {
+    let [subscription_pda, plan_pda, authority_pda, source_token_account, _receiver_ata, _caller, token_mint, token_program, _event_authority, _self_program, registry, _remaining @ ..] =
+        accounts
     else {
         return Err(SubscriptionsError::NotEnoughAccountKeys.into());
     };
@@ -319,8 +301,7 @@ pub fn process_legacy_vnext_v2(
     let now_ts = Clock::get()?.unix_timestamp;
     AuthorityConsentRegistry::validate_action_deadline(now_ts, not_after_ts)?;
 
-    let expected_registry =
-        AuthorityConsentRegistry::find_pda(&delegator, &mint, source_token_account.address()).0;
+    let expected_registry = AuthorityConsentRegistry::find_pda(&delegator, &mint, source_token_account.address()).0;
     if expected_registry != *registry.address() {
         return Err(SubscriptionsError::AuthorityConsentRegistryInvalidPda.into());
     }

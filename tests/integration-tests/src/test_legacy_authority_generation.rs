@@ -118,6 +118,7 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
     let (registry, authority) = derive_legacy_lineage(&subscriber.pubkey(), &mint, &source);
     let (seeded_authority, old_init_id) = seed_legacy_authority(litesvm, &subscriber.pubkey(), &mint, &source);
     assert_eq!(authority, seeded_authority);
+    let authority_bytes_before_bootstrap = litesvm.get_account(&authority).unwrap().data;
 
     // Construct a real v0.5.0-shaped Plan and Subscription fixture using the
     // exact production account encoders. The Subscription header stores the
@@ -158,7 +159,6 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
     assert_eq!(bootstrap_authorize_nonce, 1);
 
     let authority_account = litesvm.get_account(&authority).unwrap();
-    let authority_bytes_before_bootstrap = authority_account.data.clone();
     let authority_state = SubscriptionAuthority::load(&authority_account.data).unwrap();
     let migrated_init_id = authority_state.init_id;
     assert_eq!(migrated_init_id, old_init_id);

@@ -590,7 +590,6 @@ pub enum SubscriptionsInstruction {
     #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
     TransferSubscriptionVNextV2(#[codama(name = "transfer_data_v2")] VNextTransferV2Data) = 27,
 
-
     #[codama(account(
         name = "subscriber",
         signer,

@@ -1,12 +1,10 @@
 use pinocchio::{account::AccountView, entrypoint, Address, ProgramResult};
 
 use crate::instructions::{
-    authorize_subscription_authority_vnext, cancel_subscription, cancel_subscription_now, close_subscription_authority,
-    create_fixed_delegation, create_plan, create_recurring_delegation, delete_plan, emit_event,
-    initialize_subscription_authority, resume_subscription, revoke_abandoned_delegation, revoke_abandoned_subscription,
-    revoke_delegation, revoke_subscription_authority, revoke_subscription_authority_vnext, subscribe,
-    transfer_fixed_delegation, transfer_recurring_delegation, transfer_subscription, update_plan, vnext_plan,
-    vnext_subscription, SubscriptionsInstruction,
+    authorize_subscription_authority_vnext, cancel_subscription, cancel_subscription_now, create_plan, delete_plan,
+    emit_event, legacy_subscription_authority_vnext, resume_subscription, revoke_abandoned_delegation,
+    revoke_abandoned_subscription, revoke_delegation, update_plan, vnext_plan, vnext_subscription,
+    SubscriptionsInstruction,
 };
 
 entrypoint!(process_instruction);
@@ -19,7 +17,26 @@ pub fn process_instruction(
     let instruction = SubscriptionsInstruction::from_bytes(instruction_data)?;
 
     match instruction {
-        SubscriptionsInstruction::InitSubscriptionAuthority => initialize_subscription_authority::process(accounts),
+        SubscriptionsInstruction::InitSubscriptionAuthority
+        | SubscriptionsInstruction::CreateFixedDelegation(_)
+        | SubscriptionsInstruction::CreateRecurringDelegation(_)
+        | SubscriptionsInstruction::TransferFixed(_)
+        | SubscriptionsInstruction::TransferRecurring(_)
+        | SubscriptionsInstruction::CloseSubscriptionAuthority
+        | SubscriptionsInstruction::TransferSubscription(_)
+        | SubscriptionsInstruction::Subscribe(_)
+        | SubscriptionsInstruction::RevokeSubscriptionAuthority => {
+            Err(crate::SubscriptionsError::LegacyInstructionDisabled.into())
+        }
+        SubscriptionsInstruction::AuthorizeLegacySubscriptionAuthorityVNext(data) => {
+            legacy_subscription_authority_vnext::process_authorize(accounts, &data)
+        }
+        SubscriptionsInstruction::RevokeLegacySubscriptionAuthorityVNext(data) => {
+            legacy_subscription_authority_vnext::process_revoke(accounts, &data)
+        }
+        SubscriptionsInstruction::TransferLegacySubscriptionVNextV2(data) => {
+            transfer_subscription::process_legacy_vnext_v2(accounts, &data)
+        }
         SubscriptionsInstruction::AuthorizeSubscriptionAuthorityVNext(data) => {
             authorize_subscription_authority_vnext::process(accounts, &data)
         }

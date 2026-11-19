@@ -22,6 +22,7 @@ pub use create_recurring_delegation::CreateRecurringDelegationData;
 pub mod emit_event;
 pub mod helpers;
 pub mod initialize_subscription_authority;
+pub mod legacy_subscription_authority_vnext;
 pub mod resume_subscription;
 pub mod revoke_abandoned_delegation;
 pub mod revoke_abandoned_subscription;
@@ -48,6 +49,7 @@ use crate::instructions::update_plan::UpdatePlanData;
 use crate::SubscriptionsError;
 pub use authority_consent::AuthorityActionData;
 pub use vnext_plan::{VNextCreatePlanData, VNextPlanUpdateData};
+pub use transfer_subscription::LegacySubscriptionTransferV2Data;
 pub use vnext_subscription::{RevisionActionData, VNextSubscribeData, VNextTransferData, VNextTransferV2Data};
 
 /// All instructions supported by the subscriptions program.
@@ -588,6 +590,42 @@ pub enum SubscriptionsInstruction {
     #[codama(account(name = "self_program", docs = "This program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
     TransferSubscriptionVNextV2(#[codama(name = "transfer_data_v2")] VNextTransferV2Data) = 27,
 
+
+    #[codama(account(name = "subscriber", signer, writable, docs = "Customer migrating or authorizing the legacy canonical ATA Authority"))]
+    #[codama(account(name = "consent_registry", writable, docs = "Permanent Registry keyed by subscriber, mint and canonical ATA"))]
+    #[codama(account(name = "subscription_authority", writable, docs = "Legacy SubscriptionAuthority PDA"))]
+    #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
+    #[codama(account(name = "source_token_account", writable, docs = "Subscriber canonical Associated Token Account"))]
+    #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
+    #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
+    #[codama(account(name = "rent_payer", signer, writable, optional, docs = "Optional payer for a newly created, closeable legacy Authority; Registry rent remains subscriber-funded"))]
+    #[codama(optional_account_strategy = omitted)]
+    AuthorizeLegacySubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 28,
+
+    #[codama(account(name = "subscriber", signer, writable, docs = "Customer revoking the legacy canonical ATA Authority"))]
+    #[codama(account(name = "consent_registry", writable, docs = "Permanent Authority generation tombstone"))]
+    #[codama(account(name = "subscription_authority", writable, docs = "Legacy Authority PDA; may be absent"))]
+    #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
+    #[codama(account(name = "source_token_account", writable, docs = "Canonical ATA; may be absent when creating a tombstone"))]
+    #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
+    #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
+    #[codama(account(name = "receiver", writable, optional, docs = "Required only when the old Authority rent payer differs from the subscriber"))]
+    #[codama(optional_account_strategy = omitted)]
+    RevokeLegacySubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 29,
+
+    #[codama(account(name = "subscription_pda", writable, docs = "Existing v0.5.0 SubscriptionDelegation PDA"))]
+    #[codama(account(name = "plan_pda", docs = "Legacy Plan PDA"))]
+    #[codama(account(name = "subscription_authority", docs = "Migrated legacy Authority PDA"))]
+    #[codama(account(name = "subscriber_ata", writable, docs = "Canonical subscriber ATA"))]
+    #[codama(account(name = "receiver_ata", writable, docs = "Merchant destination token account"))]
+    #[codama(account(name = "caller", signer, docs = "Plan owner or authorized puller"))]
+    #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
+    #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
+    #[codama(account(name = "event_authority", docs = "Event authority PDA", default_value = pda("eventAuthority")))]
+    #[codama(account(name = "self_program", docs = "This Program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
+    #[codama(account(name = "consent_registry", docs = "Active legacy Authority generation Registry"))]
+    TransferLegacySubscriptionVNextV2(#[codama(name = "transfer_data")] LegacySubscriptionTransferV2Data) = 30,
+
     #[codama(skip)]
     #[codama(account(
         name = "event_authority",
@@ -606,6 +644,18 @@ impl SubscriptionsInstruction {
 
         match discriminator {
             initialize_subscription_authority::DISCRIMINATOR => Ok(Self::InitSubscriptionAuthority),
+            legacy_subscription_authority_vnext::AUTHORIZE_DISCRIMINATOR => {
+                let loaded = AuthorityActionData::load(rest)?;
+                Ok(Self::AuthorizeLegacySubscriptionAuthorityVNext(loaded.clone()))
+            }
+            legacy_subscription_authority_vnext::REVOKE_DISCRIMINATOR => {
+                let loaded = AuthorityActionData::load(rest)?;
+                Ok(Self::RevokeLegacySubscriptionAuthorityVNext(loaded.clone()))
+            }
+            transfer_subscription::LEGACY_VNEXT_V2_DISCRIMINATOR => {
+                let loaded = LegacySubscriptionTransferV2Data::load(rest)?;
+                Ok(Self::TransferLegacySubscriptionVNextV2(loaded.clone()))
+            }
             create_fixed_delegation::DISCRIMINATOR => {
                 let loaded = CreateFixedDelegationData::load(rest)?;
                 Ok(Self::CreateFixedDelegation(loaded.clone()))
@@ -703,6 +753,9 @@ impl fmt::Display for SubscriptionsInstruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InitSubscriptionAuthority => write!(f, "init_subscription_authority"),
+            Self::AuthorizeLegacySubscriptionAuthorityVNext(_) => write!(f, "authorize_legacy_subscription_authority_vnext"),
+            Self::RevokeLegacySubscriptionAuthorityVNext(_) => write!(f, "revoke_legacy_subscription_authority_vnext"),
+            Self::TransferLegacySubscriptionVNextV2(_) => write!(f, "transfer_legacy_subscription_vnext_v2"),
             Self::CreateFixedDelegation(_) => write!(f, "create_fixed_delegation"),
             Self::CreateRecurringDelegation(_) => write!(f, "create_recurring_delegation"),
             Self::RevokeDelegation => write!(f, "revoke_delegation"),

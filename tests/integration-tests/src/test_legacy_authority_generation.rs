@@ -121,13 +121,17 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
 
     let registry_account = litesvm.get_account(&registry).unwrap();
     let registry_state = AuthorityConsentRegistry::load(&registry_account.data).unwrap();
-    assert_eq!(registry_state.status, AUTHORITY_REGISTRY_ACTIVE);
-    assert_eq!(registry_state.authority_generation, 1);
-    assert_eq!(registry_state.authorize_nonce, 1);
+    let bootstrap_status = registry_state.status;
+    let bootstrap_generation = registry_state.authority_generation;
+    let bootstrap_authorize_nonce = registry_state.authorize_nonce;
+    assert_eq!(bootstrap_status, AUTHORITY_REGISTRY_ACTIVE);
+    assert_eq!(bootstrap_generation, 1);
+    assert_eq!(bootstrap_authorize_nonce, 1);
 
     let authority_account = litesvm.get_account(&authority).unwrap();
     let authority_state = SubscriptionAuthority::load(&authority_account.data).unwrap();
-    assert_eq!(authority_state.init_id, old_init_id);
+    let migrated_init_id = authority_state.init_id;
+    assert_eq!(migrated_init_id, old_init_id);
     let token_after_bootstrap = crate::tests::utils::fetch_account::<TokenAccount>(litesvm, &source);
     assert_eq!(token_after_bootstrap.delegate, Some(authority));
     assert_eq!(token_after_bootstrap.delegated_amount, u64::MAX);
@@ -140,9 +144,12 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
 
     let registry_after_revoke = litesvm.get_account(&registry).unwrap();
     let state_after_revoke = AuthorityConsentRegistry::load(&registry_after_revoke.data).unwrap();
-    assert_eq!(state_after_revoke.status, AUTHORITY_REGISTRY_REVOKED);
-    assert_eq!(state_after_revoke.authority_generation, 2);
-    assert_eq!(state_after_revoke.revoke_nonce, 1);
+    let revoke_status = state_after_revoke.status;
+    let revoke_generation = state_after_revoke.authority_generation;
+    let revoke_nonce = state_after_revoke.revoke_nonce;
+    assert_eq!(revoke_status, AUTHORITY_REGISTRY_REVOKED);
+    assert_eq!(revoke_generation, 2);
+    assert_eq!(revoke_nonce, 1);
     assert!(litesvm.get_account(&authority).is_none());
     let token_after_revoke = crate::tests::utils::fetch_account::<TokenAccount>(litesvm, &source);
     assert!(token_after_revoke.delegate.is_none());

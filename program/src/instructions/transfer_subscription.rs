@@ -26,6 +26,8 @@ use crate::get_token_account_owner;
 
 /// Instruction discriminator byte for `TransferSubscription`.
 pub const DISCRIMINATOR: &u8 = &10;
+/// Discriminator for generation-bound transfers of existing legacy subscriptions.
+pub const LEGACY_VNEXT_V2_DISCRIMINATOR: &u8 = &30;
 
 /// Executes a transfer against a [`SubscriptionDelegation`].
 ///

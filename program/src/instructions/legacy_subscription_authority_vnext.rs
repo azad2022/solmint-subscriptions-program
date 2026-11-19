@@ -155,7 +155,8 @@ fn validate_registry(
 /// First call for a live v0.5.0 Authority lazily bootstraps the Registry at
 /// generation 1 without changing Authority bytes or re-approving the delegate.
 /// That leaves existing active SubscriptionDelegation accounts collectable.
-/// An absent Authority uses the ordinary genesis-generation authorization path.
+/// New and re-created Legacy Authorities are not authorized through this route;
+/// fresh consent must use the independent VNext non-ATA flow.
 pub fn process_authorize(accounts: &mut [AccountView], data: &AuthorityActionData) -> ProgramResult {
     let [subscriber, registry, authority, mint, source, system_program, token_program, rem @ ..] = accounts else {
         return Err(SubscriptionsError::NotEnoughAccountKeys.into());
@@ -182,14 +183,6 @@ pub fn process_authorize(accounts: &mut [AccountView], data: &AuthorityActionDat
         return Err(SubscriptionsError::InvalidSubscriptionAuthorityPda.into());
     }
     let existing_payer = validate_legacy_authority(authority, subscriber.address(), mint.address())?;
-    let delegate = validate_source(subscriber, mint, source, token_program, false)?;
-
-    if existing_payer.is_none() || delegate != Some(expected_authority) {
-        // A new or re-created legacy permission is never granted by this
-        // compatibility instruction. Fresh consent must use the independent
-        // VNext non-ATA Authority route and its own Registry lineage.
-        return Err(SubscriptionsError::LegacyInstructionDisabled.into());
-    }
 
     if registry.data_len() != 0 {
         let status = validate_registry(registry, subscriber, mint, source, token_program)?;
@@ -208,6 +201,13 @@ pub fn process_authorize(accounts: &mut [AccountView], data: &AuthorityActionDat
         return Err(SubscriptionsError::LegacyInstructionDisabled.into());
     }
 
+    let delegate = validate_source(subscriber, mint, source, token_program, false)?;
+    if existing_payer.is_none() || delegate != Some(expected_authority) {
+        // A new or re-created legacy permission is never granted by this
+        // compatibility instruction. Fresh consent must use the independent
+        // VNext non-ATA Authority route and its own Registry lineage.
+        return Err(SubscriptionsError::LegacyInstructionDisabled.into());
+    }
     if data.expected_generation != 0 || data.expected_nonce != 0 {
         return Err(SubscriptionsError::AuthorityConsentRegistryIdentityMismatch.into());
     }
@@ -229,7 +229,7 @@ pub fn process_authorize(accounts: &mut [AccountView], data: &AuthorityActionDat
 /// Revokes one Legacy Authority generation atomically with Registry advancement,
 /// token delegate revocation and Authority closure. Existing Subscription and
 /// Plan PDAs remain intact but cannot collect after this transition; later
-/// reauthorization gets a distinct negative init_id and cannot revive them.
+/// VNext consent uses an independent non-ATA Authority and cannot revive them.
 pub fn process_revoke(accounts: &mut [AccountView], data: &AuthorityActionData) -> ProgramResult {
     let [subscriber, registry, authority, mint, source, system_program, token_program, rem @ ..] = accounts else {
         return Err(SubscriptionsError::NotEnoughAccountKeys.into());

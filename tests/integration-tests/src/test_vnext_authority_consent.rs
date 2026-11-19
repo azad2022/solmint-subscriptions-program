@@ -213,6 +213,37 @@ fn vnext_authorize_and_revoke_preserve_persistent_generation() {
     assert!(source_state.delegate.is_none());
     assert_eq!(source_state.delegated_amount, 0);
     assert!(litesvm.get_account(&authority).is_none());
+
+    // Reauthorization is an explicit new VNext consent, consuming the next
+    // authorization nonce and a fresh generation on the same dedicated source.
+    let reauthorize = authorize_ix(
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        2,
+        1,
+        crate::tests::utils::current_ts() + 3_600,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &reauthorize).assert_ok();
+
+    let registry_account = litesvm.get_account(&registry).unwrap();
+    let registry_state = AuthorityConsentRegistry::load(&registry_account.data).unwrap();
+    let generation = registry_state.authority_generation;
+    let authorize_nonce = registry_state.authorize_nonce;
+    let status = registry_state.status;
+    assert_eq!(generation, 3);
+    assert_eq!(authorize_nonce, 2);
+    assert_eq!(status, AUTHORITY_REGISTRY_ACTIVE);
+
+    let authority_account = litesvm.get_account(&authority).unwrap();
+    let authority_state = VNextSubscriptionAuthority::load(&authority_account.data).unwrap();
+    let authority_generation = authority_state.authority_generation;
+    assert_eq!(authority_generation, 3);
+    let source_after_reauthorize = fetch_account::<TokenAccount>(litesvm, &source);
+    assert_eq!(source_after_reauthorize.delegate, Some(authority));
+    assert_eq!(source_after_reauthorize.delegated_amount, u64::MAX);
 }
 
 #[test]

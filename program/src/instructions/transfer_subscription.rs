@@ -307,6 +307,14 @@ pub fn process_legacy_vnext_v2(
     TokenProgramInterface::check(token_program)?;
     MintInterface::check_with_program(token_mint, token_program)?;
     TokenAccountInterface::check_with_program(source_token_account, token_program)?;
+    let expected_ata = Address::find_program_address(
+        &[delegator.as_ref(), token_program.address().as_ref(), mint.as_ref()],
+        &pinocchio_associated_token_account::ID,
+    )
+    .0;
+    if expected_ata != *source_token_account.address() {
+        return Err(SubscriptionsError::InvalidAssociatedTokenAccountDerivedAddress.into());
+    }
 
     let now_ts = Clock::get()?.unix_timestamp;
     AuthorityConsentRegistry::validate_action_deadline(now_ts, not_after_ts)?;

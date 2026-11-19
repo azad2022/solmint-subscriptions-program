@@ -591,25 +591,50 @@ pub enum SubscriptionsInstruction {
     TransferSubscriptionVNextV2(#[codama(name = "transfer_data_v2")] VNextTransferV2Data) = 27,
 
 
-    #[codama(account(name = "subscriber", signer, writable, docs = "Customer migrating or authorizing the legacy canonical ATA Authority"))]
+    #[codama(account(
+        name = "subscriber",
+        signer,
+        writable,
+        docs = "Customer migrating or authorizing the legacy canonical ATA Authority"
+    ))]
     #[codama(account(name = "consent_registry", writable, docs = "Permanent Registry keyed by subscriber, mint and canonical ATA"))]
     #[codama(account(name = "subscription_authority", writable, docs = "Legacy SubscriptionAuthority PDA"))]
     #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
     #[codama(account(name = "source_token_account", writable, docs = "Subscriber canonical Associated Token Account"))]
     #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
     #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
-    #[codama(account(name = "rent_payer", signer, writable, optional, docs = "Optional payer for a newly created, closeable legacy Authority; Registry rent remains subscriber-funded"))]
+    #[codama(account(
+        name = "rent_payer",
+        signer,
+        writable,
+        optional,
+        docs = "Optional payer for a newly created, closeable legacy Authority; Registry rent remains subscriber-funded"
+    ))]
     #[codama(optional_account_strategy = omitted)]
     AuthorizeLegacySubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 28,
 
-    #[codama(account(name = "subscriber", signer, writable, docs = "Customer revoking the legacy canonical ATA Authority"))]
+    #[codama(account(
+        name = "subscriber",
+        signer,
+        writable,
+        docs = "Customer revoking the legacy canonical ATA Authority"
+    ))]
     #[codama(account(name = "consent_registry", writable, docs = "Permanent Authority generation tombstone"))]
     #[codama(account(name = "subscription_authority", writable, docs = "Legacy Authority PDA; may be absent"))]
     #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
-    #[codama(account(name = "source_token_account", writable, docs = "Canonical ATA; may be absent when creating a tombstone"))]
+    #[codama(account(
+        name = "source_token_account",
+        writable,
+        docs = "Canonical ATA; may be absent when creating a tombstone"
+    ))]
     #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
     #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
-    #[codama(account(name = "receiver", writable, optional, docs = "Required only when the old Authority rent payer differs from the subscriber"))]
+    #[codama(account(
+        name = "receiver",
+        writable,
+        optional,
+        docs = "Required only when the old Authority rent payer differs from the subscriber"
+    ))]
     #[codama(optional_account_strategy = omitted)]
     RevokeLegacySubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 29,
 
@@ -753,7 +778,9 @@ impl fmt::Display for SubscriptionsInstruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InitSubscriptionAuthority => write!(f, "init_subscription_authority"),
-            Self::AuthorizeLegacySubscriptionAuthorityVNext(_) => write!(f, "authorize_legacy_subscription_authority_vnext"),
+            Self::AuthorizeLegacySubscriptionAuthorityVNext(_) => {
+                write!(f, "authorize_legacy_subscription_authority_vnext")
+            }
             Self::RevokeLegacySubscriptionAuthorityVNext(_) => write!(f, "revoke_legacy_subscription_authority_vnext"),
             Self::TransferLegacySubscriptionVNextV2(_) => write!(f, "transfer_legacy_subscription_vnext_v2"),
             Self::CreateFixedDelegation(_) => write!(f, "create_fixed_delegation"),

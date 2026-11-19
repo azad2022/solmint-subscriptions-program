@@ -213,8 +213,10 @@ fn legacy_revoke_tombstone_invalidates_a_previously_signed_unsubmitted_authoriza
 
     let registry_account = litesvm.get_account(&registry).unwrap();
     let registry_state = AuthorityConsentRegistry::load(&registry_account.data).unwrap();
-    assert_eq!(registry_state.status, AUTHORITY_REGISTRY_REVOKED);
-    assert_eq!(registry_state.authority_generation, 2);
+    let tombstone_status = registry_state.status;
+    let tombstone_generation = registry_state.authority_generation;
+    assert_eq!(tombstone_status, AUTHORITY_REGISTRY_REVOKED);
+    assert_eq!(tombstone_generation, 2);
     assert!(litesvm.get_account(&authority).is_none());
 
     litesvm.send_transaction(delayed_authorize).assert_err(SubscriptionsError::StaleAuthorityGeneration);
@@ -231,8 +233,10 @@ fn legacy_revoke_tombstone_invalidates_a_previously_signed_unsubmitted_authoriza
 
     let final_registry_account = litesvm.get_account(&registry).unwrap();
     let final_registry = AuthorityConsentRegistry::load(&final_registry_account.data).unwrap();
-    assert_eq!(final_registry.authority_generation, 2);
-    assert_eq!(final_registry.status, AUTHORITY_REGISTRY_REVOKED);
+    let final_generation = final_registry.authority_generation;
+    let final_status = final_registry.status;
+    assert_eq!(final_generation, 2);
+    assert_eq!(final_status, AUTHORITY_REGISTRY_REVOKED);
     assert!(litesvm.get_account(&authority).is_none());
     let token = crate::tests::utils::fetch_account::<TokenAccount>(litesvm, &source);
     assert!(token.delegate.is_none());

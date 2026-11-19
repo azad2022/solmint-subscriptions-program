@@ -48,8 +48,8 @@ use crate::instructions::subscribe::SubscribeData;
 use crate::instructions::update_plan::UpdatePlanData;
 use crate::SubscriptionsError;
 pub use authority_consent::AuthorityActionData;
-pub use vnext_plan::{VNextCreatePlanData, VNextPlanUpdateData};
 pub use transfer_subscription::LegacySubscriptionTransferV2Data;
+pub use vnext_plan::{VNextCreatePlanData, VNextPlanUpdateData};
 pub use vnext_subscription::{RevisionActionData, VNextSubscribeData, VNextTransferData, VNextTransferV2Data};
 
 /// All instructions supported by the subscriptions program.
@@ -597,10 +597,18 @@ pub enum SubscriptionsInstruction {
         writable,
         docs = "Customer migrating or authorizing the legacy canonical ATA Authority"
     ))]
-    #[codama(account(name = "consent_registry", writable, docs = "Permanent Registry keyed by subscriber, mint and canonical ATA"))]
+    #[codama(account(
+        name = "consent_registry",
+        writable,
+        docs = "Permanent Registry keyed by subscriber, mint and canonical ATA"
+    ))]
     #[codama(account(name = "subscription_authority", writable, docs = "Legacy SubscriptionAuthority PDA"))]
     #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
-    #[codama(account(name = "source_token_account", writable, docs = "Subscriber canonical Associated Token Account"))]
+    #[codama(account(
+        name = "source_token_account",
+        writable,
+        docs = "Subscriber canonical Associated Token Account"
+    ))]
     #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
     #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
     AuthorizeLegacySubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 28,

@@ -230,6 +230,36 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
     assert!(token_after_revoke.delegate.is_none());
     assert_eq!(token_after_revoke.delegated_amount, 0);
 
+    // The same legacy Subscription remains on-chain as immutable evidence but
+    // the versioned pull path must reject collection after Registry revocation.
+    let source_before_replay = token_after_revoke.amount;
+    let merchant_before_replay = get_ata_balance(litesvm, &merchant_ata);
+    let subscription_before_replay = litesvm.get_account(&legacy_subscription).unwrap().data;
+    let mut stale_transfer_data = vec![30u8];
+    stale_transfer_data.extend_from_slice(&transfer_amount.to_le_bytes());
+    stale_transfer_data.extend_from_slice(subscriber.pubkey().as_ref());
+    stale_transfer_data.extend_from_slice(mint.as_ref());
+    stale_transfer_data.extend_from_slice(&period_start.to_le_bytes());
+    stale_transfer_data.extend_from_slice(&transfer_amount.to_le_bytes());
+    stale_transfer_data.extend_from_slice(&1u64.to_le_bytes());
+    stale_transfer_data.extend_from_slice(&(period_start + 3_600).to_le_bytes());
+    let stale_transfer_ix = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: transfer_ix.accounts.clone(),
+        data: stale_transfer_data,
+    };
+    build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &stale_transfer_ix)
+        .assert_err(SubscriptionsError::StaleAuthorityGeneration);
+    assert_eq!(
+        crate::tests::utils::fetch_account::<TokenAccount>(litesvm, &source).amount,
+        source_before_replay
+    );
+    assert_eq!(get_ata_balance(litesvm, &merchant_ata), merchant_before_replay);
+    assert_eq!(
+        litesvm.get_account(&legacy_subscription).unwrap().data,
+        subscription_before_replay
+    );
+
     // Replaying the old, validly signed bootstrap payload with a fresh blockhash
     // must not recreate the previous generation.
     let stale_replay = Transaction::new(

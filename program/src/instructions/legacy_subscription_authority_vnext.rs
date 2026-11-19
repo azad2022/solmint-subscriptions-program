@@ -42,6 +42,10 @@ fn validate_legacy_authority(
     if state.token_mint != *mint {
         return Err(SubscriptionsError::MintMismatch.into());
     }
+    let init_id = state.init_id;
+    if init_id < 0 {
+        return Err(SubscriptionsError::LegacyInstructionDisabled.into());
+    }
     let bump = state.bump;
     if SubscriptionAuthority::verify_pda(subscriber, mint, bump)? != *authority.address() {
         return Err(SubscriptionsError::InvalidSubscriptionAuthorityPda.into());
@@ -239,6 +243,7 @@ pub fn process_revoke(accounts: &mut [AccountView], data: &AuthorityActionData) 
     WritableAccount::check(subscriber)?;
     WritableAccount::check(registry)?;
     WritableAccount::check(authority)?;
+    WritableAccount::check(source)?;
     SystemAccount::check(system_program)?;
     TokenProgramInterface::check(token_program)?;
     MintInterface::check_with_program(mint, token_program)?;
@@ -296,9 +301,10 @@ pub fn process_revoke(accounts: &mut [AccountView], data: &AuthorityActionData) 
         } else {
             RevokeSpl::new(source, subscriber).invoke()?;
         }
-    } else if delegate.is_some() {
-        return Err(SubscriptionsError::ForeignTokenDelegatePresent.into());
     }
+    // A foreign delegate belongs to another approval and is deliberately left
+    // untouched. Closing this Program's Authority and revoking its Registry is
+    // still valid and must not be blocked by an unrelated SPL delegate.
 
     if let Some(payer) = stored_payer {
         if payer == *subscriber.address() {

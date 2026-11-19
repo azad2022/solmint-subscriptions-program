@@ -3,8 +3,8 @@ use pinocchio::{
     sysvars::{clock::Clock, Sysvar},
     AccountView, Address, ProgramResult,
 };
-use pinocchio_token::instructions::{Approve as ApproveSpl, Revoke as RevokeSpl};
-use pinocchio_token_2022::instructions::{Approve as Approve2022, Revoke as Revoke2022};
+use pinocchio_token::instructions::Revoke as RevokeSpl;
+use pinocchio_token_2022::instructions::Revoke as Revoke2022;
 
 use crate::{
     check_token_account_mint, check_token_account_owner,
@@ -84,7 +84,7 @@ fn validate_source(
 
 fn initialize_registry(
     subscriber: &AccountView,
-    registry: &AccountView,
+    registry: &mut AccountView,
     mint: &AccountView,
     source: &AccountView,
     token_program: &AccountView,

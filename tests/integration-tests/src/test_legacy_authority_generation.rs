@@ -45,7 +45,30 @@ fn action_ix(
     expected_generation: u64,
     expected_nonce: u64,
 ) -> Instruction {
-    let deadline = current_ts() + 3_600;
+    action_ix_with_deadline(
+        discriminator,
+        subscriber,
+        registry,
+        authority,
+        mint,
+        source,
+        expected_generation,
+        expected_nonce,
+        current_ts() + 3_600,
+    )
+}
+
+fn action_ix_with_deadline(
+    discriminator: u8,
+    subscriber: &Pubkey,
+    registry: Pubkey,
+    authority: Pubkey,
+    mint: Pubkey,
+    source: Pubkey,
+    expected_generation: u64,
+    expected_nonce: u64,
+    deadline: i64,
+) -> Instruction {
     let mut data = vec![discriminator];
     data.extend_from_slice(&expected_generation.to_le_bytes());
     data.extend_from_slice(&expected_nonce.to_le_bytes());
@@ -64,7 +87,6 @@ fn action_ix(
         data,
     }
 }
-
 /// Seeds a byte-valid legacy Authority and the matching SPL Token delegate,
 /// exactly as they exist after a v0.5.0 Init. This is a disposable LiteSVM
 /// fixture; no Devnet or Mainnet state is read or mutated.
@@ -121,18 +143,20 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
     let authority_bytes_before_bootstrap = litesvm.get_account(&authority).unwrap().data;
 
     // Construct a real v0.5.0-shaped Plan and Subscription fixture using the
-    // exact production account encoders. The Subscription header stores the
-    // old non-negative Authority init_id and must survive the bootstrap intact.
+    // exact production account encoders. Its finite expiry lands exactly on a
+    // billing boundary so the final in-bounds period must not roll forward.
+    let period_start = litesvm.get_sysvar::<solana_clock::Clock>().unix_timestamp;
+    let plan_end_ts = period_start + 3_600;
     let (create_plan, legacy_plan) = CreatePlan::new(litesvm, &merchant, mint)
         .plan_id(77)
         .amount(100_000)
         .period_hours(1)
+        .end_ts(plan_end_ts)
         .execute();
     create_plan.assert_ok();
     let plan_data = litesvm.get_account(&legacy_plan).unwrap();
     let plan = crate::Plan::load(&plan_data.data).unwrap();
     let legacy_terms = plan.data.terms;
-    let period_start = litesvm.get_sysvar::<solana_clock::Clock>().unix_timestamp;
     let legacy_subscription = CreateSubscription::new(
         litesvm,
         legacy_plan,
@@ -143,6 +167,10 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
     .terms(legacy_terms)
     .execute();
     let subscription_before_bootstrap = litesvm.get_account(&legacy_subscription).unwrap().data;
+
+    // Advance to the exact Plan expiry boundary. The Legacy transfer core
+    // still permits this instant and keeps the final in-bounds period snapshot.
+    crate::tests::utils::set_clock(litesvm, plan_end_ts);
 
     // First signed V2 action is a migration bootstrap only: it must preserve the
     // pre-existing Authority bytes/init_id and current SPL delegate allowance.
@@ -184,7 +212,7 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
     transfer_data.extend_from_slice(&period_start.to_le_bytes());
     transfer_data.extend_from_slice(&0u64.to_le_bytes());
     transfer_data.extend_from_slice(&1u64.to_le_bytes());
-    transfer_data.extend_from_slice(&(period_start + 3_600).to_le_bytes());
+    transfer_data.extend_from_slice(&(plan_end_ts + 3_600).to_le_bytes());
     let transfer_ix = Instruction {
         program_id: PROGRAM_ID,
         accounts: vec![
@@ -213,7 +241,17 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
     // Revocation advances the durable lineage, clears the exact delegate and
     // closes only the legacy Authority; existing subscription PDAs are not
     // deleted or rewritten by this lifecycle transition.
-    let revoke = action_ix(29, &subscriber.pubkey(), registry, authority, mint, source, 1, 0);
+    let revoke = action_ix_with_deadline(
+        29,
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        1,
+        0,
+        plan_end_ts + 3_600,
+    );
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &revoke).assert_ok();
 
     let registry_after_revoke = litesvm.get_account(&registry).unwrap();
@@ -272,7 +310,17 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
     // A revoked canonical-ATA lineage is permanently closed to Legacy
     // reauthorization. Otherwise the Program would grant a max delegate for
     // which the generation-bound Legacy Subscribe path is intentionally absent.
-    let reauthorize_legacy = action_ix(28, &subscriber.pubkey(), registry, authority, mint, source, 2, 1);
+    let reauthorize_legacy = action_ix_with_deadline(
+        28,
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        2,
+        1,
+        plan_end_ts + 3_600,
+    );
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &reauthorize_legacy)
         .assert_err(SubscriptionsError::LegacyInstructionDisabled);
     assert!(litesvm.get_account(&authority).is_none());

@@ -244,10 +244,24 @@ fn legacy_revoke_tombstone_invalidates_a_previously_signed_unsubmitted_authoriza
 }
 
 #[test]
-fn unversioned_legacy_authority_mutations_are_closed_at_dispatch() {
+fn unversioned_legacy_authority_and_permission_paths_are_closed_at_dispatch() {
     let (litesvm, subscriber) = &mut setup();
-    for discriminator in [0u8, 6u8, 14u8] {
-        let ix = Instruction { program_id: PROGRAM_ID, accounts: vec![], data: vec![discriminator] };
+    let cases = [
+        (0u8, 0usize), // InitSubscriptionAuthority
+        (1u8, crate::instructions::create_fixed_delegation::CreateFixedDelegationData::LEN),
+        (2u8, crate::instructions::create_recurring_delegation::CreateRecurringDelegationData::LEN),
+        (4u8, crate::instructions::helpers::TransferData::LEN), // TransferFixed
+        (5u8, crate::instructions::helpers::TransferData::LEN), // TransferRecurring
+        (6u8, 0usize), // CloseSubscriptionAuthority
+        (10u8, crate::instructions::helpers::TransferData::LEN), // TransferSubscription
+        (11u8, crate::instructions::subscribe::SubscribeData::LEN), // Subscribe
+        (14u8, 0usize), // RevokeSubscriptionAuthority
+    ];
+
+    for (discriminator, payload_len) in cases {
+        let mut data = vec![discriminator];
+        data.resize(1 + payload_len, 0);
+        let ix = Instruction { program_id: PROGRAM_ID, accounts: vec![], data };
         build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &ix)
             .assert_err(SubscriptionsError::LegacyInstructionDisabled);
     }

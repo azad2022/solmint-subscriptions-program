@@ -1406,13 +1406,8 @@ fn vnext_transfer_rejects_mint_substitution_without_state_mutation() {
         current_ts() + 3_600,
         TOKEN_PROGRAM_ID,
     );
-    build_and_send_transaction(
-        litesvm,
-        &[&merchant],
-        &merchant.pubkey(),
-        &substituted_mint_transfer,
-    )
-    .assert_err(SubscriptionsError::LifecycleRegistryIdentityMismatch);
+    build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &substituted_mint_transfer)
+        .assert_err(SubscriptionsError::LifecycleRegistryIdentityMismatch);
 
     assert_eq!(fetch_account::<TokenAccount>(litesvm, &source).amount, source_before);
     assert_eq!(get_ata_balance(litesvm, &destination), destination_before);
@@ -1496,13 +1491,8 @@ fn vnext_transfer_rejects_source_account_substitution_without_state_mutation() {
         current_ts() + 3_600,
         TOKEN_PROGRAM_ID,
     );
-    build_and_send_transaction(
-        litesvm,
-        &[&merchant],
-        &merchant.pubkey(),
-        &substituted_source_transfer,
-    )
-    .assert_err(SubscriptionsError::LifecycleRegistryIdentityMismatch);
+    build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &substituted_source_transfer)
+        .assert_err(SubscriptionsError::LifecycleRegistryIdentityMismatch);
 
     assert_eq!(fetch_account::<TokenAccount>(litesvm, &source).amount, source_before);
     assert_eq!(fetch_account::<TokenAccount>(litesvm, &substituted_source).amount, substituted_source_before);

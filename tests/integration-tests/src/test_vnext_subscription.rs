@@ -1,6 +1,6 @@
 use solana_instruction::{error::InstructionError, AccountMeta, Instruction};
-use solana_message::Message;
 use solana_keypair::Keypair;
+use solana_message::Message;
 use solana_pubkey::Pubkey;
 use solana_signer::Signer;
 use solana_transaction::Transaction;
@@ -1501,7 +1501,6 @@ fn vnext_transfer_rejects_source_account_substitution_without_state_mutation() {
     assert_eq!(litesvm.get_account(&subscription).unwrap().data, subscription_before);
 }
 
-
 /// Reusable full on-chain fixture for VNext transfer authorization tests.
 /// All operations run in LiteSVM; no RPC or external chain is contacted.
 struct VNextTransferFixture {
@@ -1523,14 +1522,7 @@ struct VNextTransferFixture {
 fn setup_vnext_transfer_fixture() -> VNextTransferFixture {
     let (mut litesvm, subscriber) = setup();
     let merchant = crate::tests::utils::init_wallet(&mut litesvm, 10_000_000_000);
-    let mint = init_mint(
-        &mut litesvm,
-        TOKEN_PROGRAM_ID,
-        MINT_DECIMALS,
-        1_000_000_000,
-        Some(subscriber.pubkey()),
-        &[],
-    );
+    let mint = init_mint(&mut litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, Some(subscriber.pubkey()), &[]);
     let source = init_aux_token_account(&mut litesvm, mint, subscriber.pubkey(), 2_000_000);
     let destination = init_ata(&mut litesvm, mint, merchant.pubkey(), 0);
 
@@ -1542,23 +1534,14 @@ fn setup_vnext_transfer_fixture() -> VNextTransferFixture {
     let authority =
         to_pubkey(VNextSubscriptionAuthority::find_pda(&subscriber_address, &mint_address, &source_address).0);
 
-    let authorize = authorize_ix(
-        &subscriber.pubkey(),
-        consent_registry,
-        authority,
-        mint,
-        source,
-        TOKEN_PROGRAM_ID,
-    );
+    let authorize = authorize_ix(&subscriber.pubkey(), consent_registry, authority, mint, source, TOKEN_PROGRAM_ID);
     build_and_send_transaction(&mut litesvm, &[&subscriber], &subscriber.pubkey(), &authorize).assert_ok();
 
-    let (create, plan, plan_revision_registry) =
-        create_plan_ix(&merchant.pubkey(), mint, 7, TOKEN_PROGRAM_ID);
+    let (create, plan, plan_revision_registry) = create_plan_ix(&merchant.pubkey(), mint, 7, TOKEN_PROGRAM_ID);
     build_and_send_transaction(&mut litesvm, &[&merchant], &merchant.pubkey(), &create).assert_ok();
 
     let plan_address = to_address(&plan);
-    let subscription =
-        to_pubkey(VNextSubscription::find_pda(&plan_address, &subscriber_address, &source_address).0);
+    let subscription = to_pubkey(VNextSubscription::find_pda(&plan_address, &subscriber_address, &source_address).0);
     let lifecycle_registry =
         to_pubkey(SubscriptionLifecycleRegistry::find_pda(&plan_address, &subscriber_address, &source_address).0);
     let plan_bump = VNextPlan::find_pda(&to_address(&merchant.pubkey()), 7).1;

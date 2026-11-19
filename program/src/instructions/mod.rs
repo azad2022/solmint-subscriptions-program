@@ -603,14 +603,6 @@ pub enum SubscriptionsInstruction {
     #[codama(account(name = "source_token_account", writable, docs = "Subscriber canonical Associated Token Account"))]
     #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
     #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
-    #[codama(account(
-        name = "rent_payer",
-        signer,
-        writable,
-        optional,
-        docs = "Optional payer for a newly created, closeable legacy Authority; Registry rent remains subscriber-funded"
-    ))]
-    #[codama(optional_account_strategy = omitted)]
     AuthorizeLegacySubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 28,
 
     #[codama(account(

@@ -10,9 +10,7 @@ use crate::{
     check_token_account_mint, check_token_account_owner,
     constants::TOKEN_2022_PROGRAM_ID,
     get_token_account_delegate,
-    state::{
-        AuthorityConsentRegistry, SubscriptionAuthority, AUTHORITY_REGISTRY_ACTIVE, AUTHORITY_REGISTRY_REVOKED,
-    },
+    state::{AuthorityConsentRegistry, SubscriptionAuthority, AUTHORITY_REGISTRY_ACTIVE, AUTHORITY_REGISTRY_REVOKED},
     AccountCheck, AccountClose, MintInterface, ProgramAccount, ProgramAccountInit, SignerAccount, SubscriptionsError,
     SystemAccount, TokenAccountInterface, TokenProgramInterface, WritableAccount,
 };
@@ -96,8 +94,7 @@ fn initialize_registry(
         return Err(SubscriptionsError::InvalidAccountData.into());
     }
 
-    let (expected, bump) =
-        AuthorityConsentRegistry::find_pda(subscriber.address(), mint.address(), source.address());
+    let (expected, bump) = AuthorityConsentRegistry::find_pda(subscriber.address(), mint.address(), source.address());
     if expected != *registry.address() {
         return Err(SubscriptionsError::AuthorityConsentRegistryInvalidPda.into());
     }
@@ -112,12 +109,7 @@ fn initialize_registry(
     ];
     // The permanent Registry is always customer-funded. Any optional sponsor
     // may fund only a closeable Authority account.
-    ProgramAccount::init::<AuthorityConsentRegistry>(
-        subscriber,
-        registry,
-        &seeds,
-        AuthorityConsentRegistry::LEN,
-    )?;
+    ProgramAccount::init::<AuthorityConsentRegistry>(subscriber, registry, &seeds, AuthorityConsentRegistry::LEN)?;
 
     let mut bytes = registry.try_borrow_mut()?;
     AuthorityConsentRegistry::init(
@@ -218,18 +210,9 @@ pub fn process_authorize(accounts: &mut [AccountView], data: &AuthorityActionDat
 
     // One-time capability-preserving migration. Do not touch Authority bytes,
     // do not re-Approve u64::MAX, and do not rewrite existing Subscription PDAs.
-    initialize_registry(
-        subscriber,
-        registry,
-        mint,
-        source,
-        token_program,
-        1,
-        AUTHORITY_REGISTRY_ACTIVE,
-        1,
-    )
+    initialize_registry(subscriber, registry, mint, source, token_program, 1, AUTHORITY_REGISTRY_ACTIVE, 1)
 }
- 
+
 /// Revokes one Legacy Authority generation atomically with Registry advancement,
 /// token delegate revocation and Authority closure. Existing Subscription and
 /// Plan PDAs remain intact but cannot collect after this transition; later
@@ -263,27 +246,9 @@ pub fn process_revoke(accounts: &mut [AccountView], data: &AuthorityActionData) 
 
     if registry.data_len() == 0 {
         if stored_payer.is_some() {
-            initialize_registry(
-                subscriber,
-                registry,
-                mint,
-                source,
-                token_program,
-                1,
-                AUTHORITY_REGISTRY_ACTIVE,
-                1,
-            )?;
+            initialize_registry(subscriber, registry, mint, source, token_program, 1, AUTHORITY_REGISTRY_ACTIVE, 1)?;
         } else {
-            initialize_registry(
-                subscriber,
-                registry,
-                mint,
-                source,
-                token_program,
-                0,
-                AUTHORITY_REGISTRY_REVOKED,
-                0,
-            )?;
+            initialize_registry(subscriber, registry, mint, source, token_program, 0, AUTHORITY_REGISTRY_REVOKED, 0)?;
         }
     } else {
         validate_registry(registry, subscriber, mint, source, token_program)?;

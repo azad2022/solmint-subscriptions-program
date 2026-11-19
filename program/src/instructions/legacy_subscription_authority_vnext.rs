@@ -193,11 +193,19 @@ pub fn process_authorize(accounts: &mut [AccountView], data: &AuthorityActionDat
 
     if registry.data_len() != 0 {
         let status = validate_registry(registry, subscriber, mint, source, token_program)?;
-        return if status == AUTHORITY_REGISTRY_ACTIVE {
-            Err(SubscriptionsError::AuthorityAlreadyActive.into())
-        } else {
-            Err(SubscriptionsError::LegacyInstructionDisabled.into())
-        };
+        if status == AUTHORITY_REGISTRY_ACTIVE {
+            return Err(SubscriptionsError::AuthorityAlreadyActive.into());
+        }
+        // Consume/check the signed expected generation and nonce before
+        // refusing a fresh Legacy reauthorization. An obsolete delayed payload
+        // therefore fails specifically as StaleAuthorityGeneration; a fresh
+        // action is still rolled back by the deliberate fail-closed error.
+        {
+            let mut bytes = registry.try_borrow_mut()?;
+            let state = AuthorityConsentRegistry::load_mut(&mut bytes)?;
+            state.authorize(data.expected_generation, data.expected_nonce, now, data.not_after_ts)?;
+        }
+        return Err(SubscriptionsError::LegacyInstructionDisabled.into());
     }
 
     if data.expected_generation != 0 || data.expected_nonce != 0 {

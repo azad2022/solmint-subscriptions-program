@@ -290,4 +290,3 @@ pub fn process_revoke(accounts: &mut [AccountView], data: &AuthorityActionData) 
     }
     Ok(())
 }
-

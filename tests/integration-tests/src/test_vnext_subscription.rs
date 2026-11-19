@@ -1,5 +1,6 @@
 use solana_instruction::{error::InstructionError, AccountMeta, Instruction};
 use solana_message::Message;
+use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
 use solana_signer::Signer;
 use solana_transaction::Transaction;
@@ -1498,4 +1499,223 @@ fn vnext_transfer_rejects_source_account_substitution_without_state_mutation() {
     assert_eq!(fetch_account::<TokenAccount>(litesvm, &substituted_source).amount, substituted_source_before);
     assert_eq!(get_ata_balance(litesvm, &destination), destination_before);
     assert_eq!(litesvm.get_account(&subscription).unwrap().data, subscription_before);
+}
+
+
+/// Reusable full on-chain fixture for VNext transfer authorization tests.
+/// All operations run in LiteSVM; no RPC or external chain is contacted.
+struct VNextTransferFixture {
+    litesvm: litesvm::LiteSVM,
+    subscriber: Keypair,
+    merchant: Keypair,
+    mint: Pubkey,
+    source: Pubkey,
+    destination: Pubkey,
+    plan: Pubkey,
+    plan_revision_registry: Pubkey,
+    subscription: Pubkey,
+    lifecycle_registry: Pubkey,
+    consent_registry: Pubkey,
+    authority: Pubkey,
+    created_at: i64,
+}
+
+fn setup_vnext_transfer_fixture() -> VNextTransferFixture {
+    let (mut litesvm, subscriber) = setup();
+    let merchant = crate::tests::utils::init_wallet(&mut litesvm, 10_000_000_000);
+    let mint = init_mint(
+        &mut litesvm,
+        TOKEN_PROGRAM_ID,
+        MINT_DECIMALS,
+        1_000_000_000,
+        Some(subscriber.pubkey()),
+        &[],
+    );
+    let source = init_aux_token_account(&mut litesvm, mint, subscriber.pubkey(), 2_000_000);
+    let destination = init_ata(&mut litesvm, mint, merchant.pubkey(), 0);
+
+    let subscriber_address = to_address(&subscriber.pubkey());
+    let mint_address = to_address(&mint);
+    let source_address = to_address(&source);
+    let consent_registry =
+        to_pubkey(AuthorityConsentRegistry::find_pda(&subscriber_address, &mint_address, &source_address).0);
+    let authority =
+        to_pubkey(VNextSubscriptionAuthority::find_pda(&subscriber_address, &mint_address, &source_address).0);
+
+    let authorize = authorize_ix(
+        &subscriber.pubkey(),
+        consent_registry,
+        authority,
+        mint,
+        source,
+        TOKEN_PROGRAM_ID,
+    );
+    build_and_send_transaction(&mut litesvm, &[&subscriber], &subscriber.pubkey(), &authorize).assert_ok();
+
+    let (create, plan, plan_revision_registry) =
+        create_plan_ix(&merchant.pubkey(), mint, 7, TOKEN_PROGRAM_ID);
+    build_and_send_transaction(&mut litesvm, &[&merchant], &merchant.pubkey(), &create).assert_ok();
+
+    let plan_address = to_address(&plan);
+    let subscription =
+        to_pubkey(VNextSubscription::find_pda(&plan_address, &subscriber_address, &source_address).0);
+    let lifecycle_registry =
+        to_pubkey(SubscriptionLifecycleRegistry::find_pda(&plan_address, &subscriber_address, &source_address).0);
+    let plan_bump = VNextPlan::find_pda(&to_address(&merchant.pubkey()), 7).1;
+    let plan_account = litesvm.get_account(&plan).unwrap();
+    let created_at = VNextPlan::load(&plan_account.data).unwrap().data.terms.created_at;
+
+    let subscribe = subscribe_ix(
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        mint,
+        source,
+        plan_bump,
+        created_at,
+        0,
+        0,
+        TOKEN_PROGRAM_ID,
+    );
+    build_and_send_transaction(&mut litesvm, &[&subscriber], &subscriber.pubkey(), &subscribe).assert_ok();
+
+    VNextTransferFixture {
+        litesvm,
+        subscriber,
+        merchant,
+        mint,
+        source,
+        destination,
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        created_at,
+    }
+}
+
+#[test]
+fn vnext_rejects_unapproved_puller_without_state_mutation() {
+    let mut fixture = setup_vnext_transfer_fixture();
+    let unauthorized_puller = crate::tests::utils::init_wallet(&mut fixture.litesvm, 10_000_000_000);
+    // The fee payer is deliberately a different wallet from the instruction caller.
+    // Transaction fee payment alone must not grant Plan Puller authorization.
+    let independent_fee_payer = crate::tests::utils::init_wallet(&mut fixture.litesvm, 10_000_000_000);
+    let transfer = transfer_ix(
+        &fixture.subscriber.pubkey(),
+        &unauthorized_puller.pubkey(),
+        fixture.plan,
+        fixture.plan_revision_registry,
+        fixture.subscription,
+        fixture.lifecycle_registry,
+        fixture.consent_registry,
+        fixture.authority,
+        fixture.source,
+        fixture.destination,
+        fixture.mint,
+        1,
+        1,
+        100_000,
+        fixture.created_at,
+        0,
+        current_ts() + 3_600,
+        TOKEN_PROGRAM_ID,
+    );
+
+    let source_before = fetch_account::<TokenAccount>(&fixture.litesvm, &fixture.source).amount;
+    let destination_before = get_ata_balance(&fixture.litesvm, &fixture.destination);
+    let subscription_before = fixture.litesvm.get_account(&fixture.subscription).unwrap().data;
+
+    build_and_send_transaction(
+        &mut fixture.litesvm,
+        &[&unauthorized_puller, &independent_fee_payer],
+        &independent_fee_payer.pubkey(),
+        &transfer,
+    )
+    .assert_err(SubscriptionsError::Unauthorized);
+
+    assert_eq!(fetch_account::<TokenAccount>(&fixture.litesvm, &fixture.source).amount, source_before);
+    assert_eq!(get_ata_balance(&fixture.litesvm, &fixture.destination), destination_before);
+    assert_eq!(fixture.litesvm.get_account(&fixture.subscription).unwrap().data, subscription_before);
+}
+
+#[test]
+fn vnext_rejects_destination_outside_plan_allowlist_without_state_mutation() {
+    let mut fixture = setup_vnext_transfer_fixture();
+    let unlisted_owner = Pubkey::new_unique();
+    let unlisted_destination = init_ata(&mut fixture.litesvm, fixture.mint, unlisted_owner, 0);
+    let transfer = transfer_ix(
+        &fixture.subscriber.pubkey(),
+        &fixture.merchant.pubkey(),
+        fixture.plan,
+        fixture.plan_revision_registry,
+        fixture.subscription,
+        fixture.lifecycle_registry,
+        fixture.consent_registry,
+        fixture.authority,
+        fixture.source,
+        unlisted_destination,
+        fixture.mint,
+        1,
+        1,
+        100_000,
+        fixture.created_at,
+        0,
+        current_ts() + 3_600,
+        TOKEN_PROGRAM_ID,
+    );
+
+    let source_before = fetch_account::<TokenAccount>(&fixture.litesvm, &fixture.source).amount;
+    let destination_before = get_ata_balance(&fixture.litesvm, &unlisted_destination);
+    let subscription_before = fixture.litesvm.get_account(&fixture.subscription).unwrap().data;
+
+    build_and_send_transaction(&mut fixture.litesvm, &[&fixture.merchant], &fixture.merchant.pubkey(), &transfer)
+        .assert_err(SubscriptionsError::UnauthorizedDestination);
+
+    assert_eq!(fetch_account::<TokenAccount>(&fixture.litesvm, &fixture.source).amount, source_before);
+    assert_eq!(get_ata_balance(&fixture.litesvm, &unlisted_destination), destination_before);
+    assert_eq!(fixture.litesvm.get_account(&fixture.subscription).unwrap().data, subscription_before);
+}
+
+#[test]
+fn vnext_rejects_cumulative_period_overdraft_without_state_mutation() {
+    let mut fixture = setup_vnext_transfer_fixture();
+    let transfer = transfer_ix(
+        &fixture.subscriber.pubkey(),
+        &fixture.merchant.pubkey(),
+        fixture.plan,
+        fixture.plan_revision_registry,
+        fixture.subscription,
+        fixture.lifecycle_registry,
+        fixture.consent_registry,
+        fixture.authority,
+        fixture.source,
+        fixture.destination,
+        fixture.mint,
+        1,
+        1,
+        1_000_001,
+        fixture.created_at,
+        0,
+        current_ts() + 3_600,
+        TOKEN_PROGRAM_ID,
+    );
+
+    let source_before = fetch_account::<TokenAccount>(&fixture.litesvm, &fixture.source).amount;
+    let destination_before = get_ata_balance(&fixture.litesvm, &fixture.destination);
+    let subscription_before = fixture.litesvm.get_account(&fixture.subscription).unwrap().data;
+
+    build_and_send_transaction(&mut fixture.litesvm, &[&fixture.merchant], &fixture.merchant.pubkey(), &transfer)
+        .assert_err(SubscriptionsError::AmountExceedsPeriodLimit);
+
+    assert_eq!(fetch_account::<TokenAccount>(&fixture.litesvm, &fixture.source).amount, source_before);
+    assert_eq!(get_ata_balance(&fixture.litesvm, &fixture.destination), destination_before);
+    assert_eq!(fixture.litesvm.get_account(&fixture.subscription).unwrap().data, subscription_before);
 }

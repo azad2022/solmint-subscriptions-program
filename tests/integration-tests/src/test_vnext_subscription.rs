@@ -1243,3 +1243,102 @@ fn vnext_stale_cancel_now_and_resume_cannot_survive_same_timestamp_aba() {
     assert_eq!(current_lifecycle_revision, 6);
     assert_eq!(current_expires_at_ts, 0);
 }
+
+#[test]
+fn vnext_transfer_rejects_token_program_substitution_without_state_mutation() {
+    let (litesvm, subscriber) = &mut setup();
+    let merchant = crate::tests::utils::init_wallet(litesvm, 10_000_000_000);
+    let mint = init_mint(
+        litesvm,
+        TOKEN_PROGRAM_ID,
+        MINT_DECIMALS,
+        1_000_000_000,
+        Some(subscriber.pubkey()),
+        &[],
+    );
+    let source = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);
+    let destination = init_ata(litesvm, mint, merchant.pubkey(), 0);
+
+    let subscriber_address = to_address(&subscriber.pubkey());
+    let mint_address = to_address(&mint);
+    let source_address = to_address(&source);
+    let consent_registry =
+        to_pubkey(AuthorityConsentRegistry::find_pda(&subscriber_address, &mint_address, &source_address).0);
+    let authority =
+        to_pubkey(VNextSubscriptionAuthority::find_pda(&subscriber_address, &mint_address, &source_address).0);
+
+    let authorize =
+        authorize_ix(&subscriber.pubkey(), consent_registry, authority, mint, source, TOKEN_PROGRAM_ID);
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize).assert_ok();
+
+    let (create, plan, plan_revision_registry) = create_plan_ix(&merchant.pubkey(), mint, 7, TOKEN_PROGRAM_ID);
+    build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &create).assert_ok();
+
+    let plan_address = to_address(&plan);
+    let subscription =
+        to_pubkey(VNextSubscription::find_pda(&plan_address, &subscriber_address, &source_address).0);
+    let lifecycle_registry =
+        to_pubkey(SubscriptionLifecycleRegistry::find_pda(&plan_address, &subscriber_address, &source_address).0);
+    let plan_bump = VNextPlan::find_pda(&to_address(&merchant.pubkey()), 7).1;
+    let plan_account = litesvm.get_account(&plan).unwrap();
+    let created_at = VNextPlan::load(&plan_account.data).unwrap().data.terms.created_at;
+
+    let subscribe = subscribe_ix(
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        mint,
+        source,
+        plan_bump,
+        created_at,
+        0,
+        0,
+        TOKEN_PROGRAM_ID,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &subscribe).assert_ok();
+
+    let source_before = fetch_account::<TokenAccount>(litesvm, &source).amount;
+    let destination_before = get_ata_balance(litesvm, &destination);
+    let subscription_before = litesvm.get_account(&subscription).unwrap().data;
+
+    // The mint and source account are owned by the classic SPL Token Program.
+    // Supplying the Token-2022 Program in the same otherwise-valid transfer
+    // must fail closed before any Subscription period accounting or token
+    // balance can change.
+    let substituted_token_program = transfer_ix(
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        plan,
+        plan_revision_registry,
+        subscription,
+        lifecycle_registry,
+        consent_registry,
+        authority,
+        source,
+        destination,
+        mint,
+        1,
+        1,
+        100_000,
+        created_at,
+        0,
+        current_ts() + 3_600,
+        TOKEN_2022_PROGRAM_ID,
+    );
+    let result = build_and_send_transaction(
+        litesvm,
+        &[&merchant],
+        &merchant.pubkey(),
+        &substituted_token_program,
+    );
+    assert!(result.is_err(), "VNext transfer must reject a substituted token program");
+
+    assert_eq!(fetch_account::<TokenAccount>(litesvm, &source).amount, source_before);
+    assert_eq!(get_ata_balance(litesvm, &destination), destination_before);
+    assert_eq!(litesvm.get_account(&subscription).unwrap().data, subscription_before);
+}

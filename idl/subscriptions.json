@@ -1891,6 +1891,74 @@
       },
       {
         "kind": "definedTypeNode",
+        "name": "legacySubscriptionTransferV2Data",
+        "type": {
+          "fields": [
+            {
+              "kind": "structFieldTypeNode",
+              "name": "amount",
+              "type": {
+                "kind": "numberTypeNode",
+                "endian": "le",
+                "format": "u64"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "delegator",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "mint",
+              "type": {
+                "kind": "publicKeyTypeNode"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "expectedCurrentPeriodStartTs",
+              "type": {
+                "kind": "numberTypeNode",
+                "endian": "le",
+                "format": "i64"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "expectedAmountPulledInPeriod",
+              "type": {
+                "kind": "numberTypeNode",
+                "endian": "le",
+                "format": "u64"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "expectedAuthorityGeneration",
+              "type": {
+                "kind": "numberTypeNode",
+                "endian": "le",
+                "format": "u64"
+              }
+            },
+            {
+              "kind": "structFieldTypeNode",
+              "name": "notAfterTs",
+              "type": {
+                "kind": "numberTypeNode",
+                "endian": "le",
+                "format": "i64"
+              }
+            }
+          ],
+          "kind": "structTypeNode"
+        }
+      },
+      {
+        "kind": "definedTypeNode",
         "name": "transferData",
         "type": {
           "fields": [
@@ -2441,6 +2509,12 @@
         "kind": "errorNode",
         "message": "Subscription transfer billing-period snapshot is stale or already consumed",
         "name": "staleSubscriptionTransferSnapshot"
+      },
+      {
+        "code": 157,
+        "kind": "errorNode",
+        "message": "Unversioned legacy Authority or permission instruction is disabled; use the generation-bound VNext route",
+        "name": "legacyInstructionDisabled"
       },
       {
         "code": 300,
@@ -6589,6 +6663,524 @@
         ],
         "kind": "instructionNode",
         "name": "transferSubscriptionVnextV2"
+      },
+      {
+        "kind": "instructionNode",
+        "name": "authorizeLegacySubscriptionAuthorityVnext",
+        "accounts": [
+          {
+            "docs": [
+              "Customer migrating an existing canonical ATA Authority"
+            ],
+            "isSigner": true,
+            "isWritable": true,
+            "kind": "instructionAccountNode",
+            "name": "subscriber"
+          },
+          {
+            "docs": [
+              "Permanent Registry keyed by subscriber, mint and canonical ATA"
+            ],
+            "isSigner": false,
+            "isWritable": true,
+            "kind": "instructionAccountNode",
+            "name": "consentRegistry",
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "authorityConsentRegistry"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "subscriber",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "subscriber"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "mint",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "tokenMint"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "sourceTokenAccount",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "sourceTokenAccount"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "docs": [
+              "Existing legacy SubscriptionAuthority PDA"
+            ],
+            "isSigner": false,
+            "isWritable": true,
+            "kind": "instructionAccountNode",
+            "name": "subscriptionAuthority",
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "subscriptionAuthority"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "user",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "owner"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "tokenMint",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "subscriber"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "docs": [
+              "SPL Token or Token-2022 mint"
+            ],
+            "isSigner": false,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "tokenMint"
+          },
+          {
+            "docs": [
+              "Subscriber canonical Associated Token Account"
+            ],
+            "isSigner": false,
+            "isWritable": true,
+            "kind": "instructionAccountNode",
+            "name": "sourceTokenAccount"
+          },
+          {
+            "docs": [
+              "System Program"
+            ],
+            "isSigner": false,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "systemProgram",
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "11111111111111111111111111111111"
+            }
+          },
+          {
+            "docs": [
+              "SPL Token or Token-2022 program"
+            ],
+            "isSigner": false,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "tokenProgram"
+          }
+        ],
+        "arguments": [
+          {
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 28
+            },
+            "defaultValueStrategy": "omitted",
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "type": {
+              "kind": "numberTypeNode",
+              "endian": "le",
+              "format": "u8"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "authorityActionData",
+            "type": {
+              "kind": "definedTypeLinkNode",
+              "name": "authorityActionData"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "optionalAccountStrategy": "omitted"
+      },
+      {
+        "kind": "instructionNode",
+        "name": "revokeLegacySubscriptionAuthorityVnext",
+        "accounts": [
+          {
+            "docs": [
+              "Customer revoking the legacy canonical ATA Authority"
+            ],
+            "isSigner": true,
+            "isWritable": true,
+            "kind": "instructionAccountNode",
+            "name": "subscriber"
+          },
+          {
+            "docs": [
+              "Permanent Authority generation tombstone"
+            ],
+            "isSigner": false,
+            "isWritable": true,
+            "kind": "instructionAccountNode",
+            "name": "consentRegistry",
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "authorityConsentRegistry"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "subscriber",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "subscriber"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "mint",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "tokenMint"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "sourceTokenAccount",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "sourceTokenAccount"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "docs": [
+              "Legacy Authority PDA; may be absent"
+            ],
+            "isSigner": false,
+            "isWritable": true,
+            "kind": "instructionAccountNode",
+            "name": "subscriptionAuthority",
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "subscriptionAuthority"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "user",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "owner"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "tokenMint",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "subscriber"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "docs": [
+              "SPL Token or Token-2022 mint"
+            ],
+            "isSigner": false,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "tokenMint"
+          },
+          {
+            "docs": [
+              "Canonical ATA; may be absent when creating a tombstone"
+            ],
+            "isSigner": false,
+            "isWritable": true,
+            "kind": "instructionAccountNode",
+            "name": "sourceTokenAccount"
+          },
+          {
+            "docs": [
+              "System Program"
+            ],
+            "isSigner": false,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "systemProgram",
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "11111111111111111111111111111111"
+            }
+          },
+          {
+            "docs": [
+              "SPL Token or Token-2022 program"
+            ],
+            "isSigner": false,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "tokenProgram"
+          },
+          {
+            "docs": [
+              "Required if the recorded legacy Authority rent payer differs from the subscriber"
+            ],
+            "isSigner": false,
+            "isWritable": true,
+            "kind": "instructionAccountNode",
+            "name": "receiver",
+            "isOptional": true
+          }
+        ],
+        "arguments": [
+          {
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 29
+            },
+            "defaultValueStrategy": "omitted",
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "type": {
+              "kind": "numberTypeNode",
+              "endian": "le",
+              "format": "u8"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "authorityActionData",
+            "type": {
+              "kind": "definedTypeLinkNode",
+              "name": "authorityActionData"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "optionalAccountStrategy": "omitted"
+      },
+      {
+        "kind": "instructionNode",
+        "name": "transferLegacySubscriptionVnextV2",
+        "accounts": [
+          {
+            "docs": [
+              "Existing v0.5.0 SubscriptionDelegation PDA"
+            ],
+            "isSigner": false,
+            "isWritable": true,
+            "kind": "instructionAccountNode",
+            "name": "subscriptionPda"
+          },
+          {
+            "docs": [
+              "Legacy Plan PDA"
+            ],
+            "isSigner": false,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "planPda"
+          },
+          {
+            "docs": [
+              "Migrated legacy Authority PDA"
+            ],
+            "isSigner": false,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "subscriptionAuthority"
+          },
+          {
+            "docs": [
+              "Canonical subscriber ATA"
+            ],
+            "isSigner": false,
+            "isWritable": true,
+            "kind": "instructionAccountNode",
+            "name": "subscriberAta"
+          },
+          {
+            "docs": [
+              "Merchant destination token account"
+            ],
+            "isSigner": false,
+            "isWritable": true,
+            "kind": "instructionAccountNode",
+            "name": "receiverAta"
+          },
+          {
+            "docs": [
+              "Plan owner or authorized puller"
+            ],
+            "isSigner": true,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "caller"
+          },
+          {
+            "docs": [
+              "SPL Token or Token-2022 mint"
+            ],
+            "isSigner": false,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "tokenMint"
+          },
+          {
+            "docs": [
+              "SPL Token or Token-2022 program"
+            ],
+            "isSigner": false,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "tokenProgram"
+          },
+          {
+            "docs": [
+              "Event authority PDA"
+            ],
+            "isSigner": false,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "eventAuthority",
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "eventAuthority"
+              },
+              "seeds": []
+            }
+          },
+          {
+            "docs": [
+              "This Program for self-CPI"
+            ],
+            "isSigner": false,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "selfProgram",
+            "defaultValue": {
+              "kind": "publicKeyValueNode",
+              "publicKey": "De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44"
+            }
+          },
+          {
+            "docs": [
+              "Active generation-bound Legacy Authority Registry"
+            ],
+            "isSigner": false,
+            "isWritable": false,
+            "kind": "instructionAccountNode",
+            "name": "consentRegistry",
+            "defaultValue": {
+              "kind": "pdaValueNode",
+              "pda": {
+                "kind": "pdaLinkNode",
+                "name": "authorityConsentRegistry"
+              },
+              "seeds": [
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "subscriber",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "subscriber"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "mint",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "tokenMint"
+                  }
+                },
+                {
+                  "kind": "pdaSeedValueNode",
+                  "name": "sourceTokenAccount",
+                  "value": {
+                    "kind": "accountValueNode",
+                    "name": "sourceTokenAccount"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "arguments": [
+          {
+            "defaultValue": {
+              "kind": "numberValueNode",
+              "number": 30
+            },
+            "defaultValueStrategy": "omitted",
+            "kind": "instructionArgumentNode",
+            "name": "discriminator",
+            "type": {
+              "kind": "numberTypeNode",
+              "endian": "le",
+              "format": "u8"
+            }
+          },
+          {
+            "kind": "instructionArgumentNode",
+            "name": "transferData",
+            "type": {
+              "kind": "definedTypeLinkNode",
+              "name": "legacySubscriptionTransferV2Data"
+            }
+          }
+        ],
+        "discriminators": [
+          {
+            "kind": "fieldDiscriminatorNode",
+            "name": "discriminator",
+            "offset": 0
+          }
+        ],
+        "optionalAccountStrategy": "omitted"
       }
     ],
     "kind": "programNode",

@@ -11,10 +11,13 @@ use crate::{
     tests::{
         asserts::TransactionResultExt,
         constants::{MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID, TOKEN_PROGRAM_ID},
-        utils::{build_and_send_transaction, current_ts, init_ata, init_mint, setup},
+        utils::{
+            build_and_send_transaction, current_ts, get_ata_balance, init_ata, init_mint, init_wallet, setup,
+            CreatePlan, CreateSubscription,
+        },
     },
-    AuthorityConsentRegistry, SubscriptionAuthority, SubscriptionsError,
-    AUTHORITY_REGISTRY_ACTIVE, AUTHORITY_REGISTRY_REVOKED,
+    event_engine::event_authority_pda, AuthorityConsentRegistry, SubscriptionAuthority, SubscriptionDelegation,
+    SubscriptionsError, AUTHORITY_REGISTRY_ACTIVE, AUTHORITY_REGISTRY_REVOKED,
 };
 
 fn to_address(key: &Pubkey) -> pinocchio::Address {
@@ -110,9 +113,35 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
     let (litesvm, subscriber) = &mut setup();
     let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, Some(subscriber.pubkey()), &[]);
     let source = init_ata(litesvm, mint, subscriber.pubkey(), 1_000_000);
+    let merchant = init_wallet(litesvm, 10_000_000_000);
+    let merchant_ata = init_ata(litesvm, mint, merchant.pubkey(), 0);
     let (registry, authority) = derive_legacy_lineage(&subscriber.pubkey(), &mint, &source);
     let (seeded_authority, old_init_id) = seed_legacy_authority(litesvm, &subscriber.pubkey(), &mint, &source);
     assert_eq!(authority, seeded_authority);
+
+    // Construct a real v0.5.0-shaped Plan and Subscription fixture using the
+    // exact production account encoders. The Subscription header stores the
+    // old non-negative Authority init_id and must survive the bootstrap intact.
+    let (create_plan, legacy_plan) = CreatePlan::new(litesvm, &merchant, mint)
+        .plan_id(77)
+        .amount(100_000)
+        .period_hours(1)
+        .execute();
+    create_plan.assert_ok();
+    let plan_data = litesvm.get_account(&legacy_plan).unwrap();
+    let plan = crate::Plan::load(&plan_data.data).unwrap();
+    let legacy_terms = plan.data.terms;
+    let period_start = litesvm.get_sysvar::<solana_clock::Clock>().unix_timestamp;
+    let legacy_subscription = CreateSubscription::new(
+        litesvm,
+        legacy_plan,
+        subscriber.pubkey(),
+        mint,
+        period_start,
+    )
+    .terms(legacy_terms)
+    .execute();
+    let subscription_before_bootstrap = litesvm.get_account(&legacy_subscription).unwrap().data;
 
     // First signed V2 action is a migration bootstrap only: it must preserve the
     // pre-existing Authority bytes/init_id and current SPL delegate allowance.
@@ -129,12 +158,57 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
     assert_eq!(bootstrap_authorize_nonce, 1);
 
     let authority_account = litesvm.get_account(&authority).unwrap();
+    let authority_bytes_before_bootstrap = authority_account.data.clone();
     let authority_state = SubscriptionAuthority::load(&authority_account.data).unwrap();
     let migrated_init_id = authority_state.init_id;
     assert_eq!(migrated_init_id, old_init_id);
+    assert_eq!(authority_bytes_before_bootstrap, authority_account.data);
+    let subscription_after_bootstrap = litesvm.get_account(&legacy_subscription).unwrap().data;
+    assert_eq!(subscription_after_bootstrap, subscription_before_bootstrap);
+    let subscription_state = SubscriptionDelegation::load(&subscription_after_bootstrap).unwrap();
+    let subscription_init_id = subscription_state.header.init_id;
+    assert_eq!(subscription_init_id, old_init_id);
     let token_after_bootstrap = crate::tests::utils::fetch_account::<TokenAccount>(litesvm, &source);
     assert_eq!(token_after_bootstrap.delegate, Some(authority));
     assert_eq!(token_after_bootstrap.delegated_amount, u64::MAX);
+
+    // Prove the existing legacy Subscription remains usable through the new
+    // generation-bound transfer discriminator. This keeps original period
+    // accounting and destination validation in the old audited transfer core.
+    let transfer_amount = 10_000u64;
+    let event_authority = Pubkey::new_from_array(event_authority_pda::ID.to_bytes());
+    let mut transfer_data = vec![30u8];
+    transfer_data.extend_from_slice(&transfer_amount.to_le_bytes());
+    transfer_data.extend_from_slice(subscriber.pubkey().as_ref());
+    transfer_data.extend_from_slice(mint.as_ref());
+    transfer_data.extend_from_slice(&period_start.to_le_bytes());
+    transfer_data.extend_from_slice(&0u64.to_le_bytes());
+    transfer_data.extend_from_slice(&1u64.to_le_bytes());
+    transfer_data.extend_from_slice(&(period_start + 3_600).to_le_bytes());
+    let transfer_ix = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new(legacy_subscription, false),
+            AccountMeta::new_readonly(legacy_plan, false),
+            AccountMeta::new_readonly(authority, false),
+            AccountMeta::new(source, false),
+            AccountMeta::new(merchant_ata, false),
+            AccountMeta::new_readonly(merchant.pubkey(), true),
+            AccountMeta::new_readonly(mint, false),
+            AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+            AccountMeta::new_readonly(event_authority, false),
+            AccountMeta::new_readonly(PROGRAM_ID, false),
+            AccountMeta::new_readonly(registry, false),
+        ],
+        data: transfer_data,
+    };
+    let merchant_before = get_ata_balance(litesvm, &merchant_ata);
+    build_and_send_transaction(litesvm, &[&merchant], &merchant.pubkey(), &transfer_ix).assert_ok();
+    assert_eq!(get_ata_balance(litesvm, &merchant_ata), merchant_before + transfer_amount);
+    let after_transfer = litesvm.get_account(&legacy_subscription).unwrap();
+    let after_transfer_state = SubscriptionDelegation::load(&after_transfer.data).unwrap();
+    let pulled_amount = after_transfer_state.amount_pulled_in_period;
+    assert_eq!(pulled_amount, transfer_amount);
 
     // Revocation advances the durable lineage, clears the exact delegate and
     // closes only the legacy Authority; existing subscription PDAs are not
@@ -151,6 +225,7 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
     assert_eq!(revoke_generation, 2);
     assert_eq!(revoke_nonce, 1);
     assert!(litesvm.get_account(&authority).is_none());
+    assert!(litesvm.get_account(&legacy_subscription).is_some(), "legacy Subscription evidence must remain readable after revoke");
     let token_after_revoke = crate::tests::utils::fetch_account::<TokenAccount>(litesvm, &source);
     assert!(token_after_revoke.delegate.is_none());
     assert_eq!(token_after_revoke.delegated_amount, 0);

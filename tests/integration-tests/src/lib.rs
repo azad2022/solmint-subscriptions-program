@@ -49,6 +49,8 @@ mod test_transfer_subscription;
 #[cfg(test)]
 mod test_update_plan;
 #[cfg(test)]
+mod test_legacy_authority_generation;
+#[cfg(test)]
 mod test_vnext_abi;
 #[cfg(test)]
 mod test_vnext_authority_consent;

@@ -174,7 +174,17 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
 
     // First signed V2 action is a migration bootstrap only: it must preserve the
     // pre-existing Authority bytes/init_id and current SPL delegate allowance.
-    let bootstrap = action_ix(28, &subscriber.pubkey(), registry, authority, mint, source, 0, 0);
+    let bootstrap = action_ix_with_deadline(
+        28,
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        0,
+        0,
+        plan_end_ts + 3_600,
+    );
     build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &bootstrap).assert_ok();
 
     let registry_account = litesvm.get_account(&registry).unwrap();

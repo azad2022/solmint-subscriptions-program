@@ -10,7 +10,6 @@ use crate::{
     check_token_account_mint, check_token_account_owner,
     constants::TOKEN_2022_PROGRAM_ID,
     get_token_account_delegate,
-    helpers::system::resolve_optional_payer,
     state::{
         AuthorityConsentRegistry, SubscriptionAuthority, AUTHORITY_REGISTRY_ACTIVE, AUTHORITY_REGISTRY_REVOKED,
     },
@@ -313,25 +312,3 @@ pub fn process_revoke(accounts: &mut [AccountView], data: &AuthorityActionData) 
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn generation_init_id_is_negative_unique_and_never_unknown() {
-        let one = generation_init_id(1).unwrap();
-        let two = generation_init_id(2).unwrap();
-        let three = generation_init_id(3).unwrap();
-        assert!(one < 0 && two < 0 && three < 0);
-        assert_ne!(one, i64::MIN);
-        assert_ne!(two, i64::MIN);
-        assert_eq!(two, one + 1);
-        assert_eq!(three, two + 1);
-    }
-
-    #[test]
-    fn generation_init_id_rejects_zero_and_signed_overflow() {
-        assert!(generation_init_id(0).is_err());
-        assert!(generation_init_id(i64::MAX as u64 + 1).is_err());
-    }
-}

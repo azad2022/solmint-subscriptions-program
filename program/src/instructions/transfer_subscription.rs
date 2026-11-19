@@ -243,21 +243,50 @@ fn project_legacy_period_snapshot(
     current_start_ts: i64,
     amount_pulled: u64,
     period_length_s: u64,
+    expiry_ts: i64,
     now_ts: i64,
 ) -> Result<(i64, u64), ProgramError> {
-    let period_length = i64::try_from(period_length_s).map_err(|_| SubscriptionsError::ArithmeticOverflow)?;
-    if period_length <= 0 || now_ts < current_start_ts {
+    // Keep this projection identical to validate_recurring_transfer's legacy
+    // period catch-up, including the final in-bounds period before a finite
+    // Plan expiry. This function predicts the pre-transfer snapshot only.
+    let period_length = i64::try_from(period_length_s).map_err(|_| SubscriptionsError::InvalidPeriodLength)?;
+    if period_length == 0 {
         return Err(SubscriptionsError::InvalidPeriodLength.into());
     }
-    let elapsed = now_ts.checked_sub(current_start_ts).ok_or(SubscriptionsError::ArithmeticOverflow)?;
-    let periods_elapsed = elapsed / period_length;
-    let offset = periods_elapsed.checked_mul(period_length).ok_or(SubscriptionsError::ArithmeticOverflow)?;
-    let projected_start = current_start_ts.checked_add(offset).ok_or(SubscriptionsError::ArithmeticOverflow)?;
-    if periods_elapsed == 0 {
-        Ok((projected_start, amount_pulled))
-    } else {
-        Ok((projected_start, 0))
+    if now_ts < current_start_ts {
+        return Err(SubscriptionsError::DelegationNotStarted.into());
     }
+
+    let mut projected_start = current_start_ts;
+    let mut projected_amount = amount_pulled;
+    let elapsed = now_ts.saturating_sub(projected_start);
+    if elapsed >= period_length {
+        let periods_elapsed = elapsed.checked_div(period_length).ok_or(SubscriptionsError::InvalidPeriodLength)?;
+        let increment = periods_elapsed.checked_mul(period_length).ok_or(SubscriptionsError::ArithmeticOverflow)?;
+        let candidate_start = projected_start.checked_add(increment).ok_or(SubscriptionsError::ArithmeticOverflow)?;
+
+        if expiry_ts == 0 || candidate_start < expiry_ts {
+            projected_start = candidate_start;
+            projected_amount = 0;
+        } else {
+            let last_billable = expiry_ts.checked_sub(1).ok_or(SubscriptionsError::ArithmeticUnderflow)?;
+            if last_billable >= projected_start {
+                let span = last_billable
+                    .checked_sub(projected_start)
+                    .ok_or(SubscriptionsError::ArithmeticUnderflow)?;
+                let periods_in_bounds = span.checked_div(period_length).ok_or(SubscriptionsError::InvalidPeriodLength)?;
+                let increment = periods_in_bounds.checked_mul(period_length).ok_or(SubscriptionsError::ArithmeticOverflow)?;
+                let last_in_bounds_start =
+                    projected_start.checked_add(increment).ok_or(SubscriptionsError::ArithmeticOverflow)?;
+                if last_in_bounds_start > projected_start {
+                    projected_start = last_in_bounds_start;
+                    projected_amount = 0;
+                }
+            }
+        }
+    }
+
+    Ok((projected_start, projected_amount))
 }
 
 /// New discriminator path for existing legacy subscriptions after their
@@ -300,6 +329,20 @@ pub fn process_legacy_vnext_v2(accounts: &mut [AccountView], data: &LegacySubscr
 
     let now_ts = Clock::get()?.unix_timestamp;
     AuthorityConsentRegistry::validate_action_deadline(now_ts, not_after_ts)?;
+
+    ProgramAccount::check(plan_pda)?;
+    let plan_end_ts = {
+        let plan_bytes = plan_pda.try_borrow()?;
+        let plan = Plan::load(&plan_bytes)?;
+        if plan.data.mint != mint {
+            return Err(SubscriptionsError::MintMismatch.into());
+        }
+        let end_ts = plan.data.end_ts;
+        if end_ts != 0 && now_ts > end_ts {
+            return Err(SubscriptionsError::PlanExpired.into());
+        }
+        end_ts
+    };
 
     let expected_registry = AuthorityConsentRegistry::find_pda(&delegator, &mint, source_token_account.address()).0;
     if expected_registry != *registry.address() {
@@ -352,6 +395,7 @@ pub fn process_legacy_vnext_v2(accounts: &mut [AccountView], data: &LegacySubscr
             subscription.current_period_start_ts,
             subscription.amount_pulled_in_period,
             period_length,
+            plan_end_ts,
             now_ts,
         )?;
         if projected.0 != expected_period_start || projected.1 != expected_amount_pulled {

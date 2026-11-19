@@ -157,26 +157,26 @@ fn legacy_registry_bootstrap_preserves_old_authority_then_revoke_and_reauthorize
     );
     litesvm.send_transaction(stale_replay).assert_err(SubscriptionsError::StaleAuthorityGeneration);
 
-    // Explicit reauthorization consumes the next authorize nonce and gets a
-    // negative, generation-derived init_id that cannot match any v0.5.0 slot id.
-    let reauthorize = action_ix(28, &subscriber.pubkey(), registry, authority, mint, source, 2, 1);
-    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &reauthorize).assert_ok();
-    let reauthorized = litesvm.get_account(&authority).unwrap();
-    let new_authority_state = SubscriptionAuthority::load(&reauthorized.data).unwrap();
-    let new_init_id = new_authority_state.init_id;
-    assert!(new_init_id < 0);
-    assert_ne!(new_init_id, i64::MIN);
-    assert_ne!(new_init_id, old_init_id);
-    assert!(new_authority_state.check_init_id(old_init_id).is_err());
+    // A revoked canonical-ATA lineage is permanently closed to Legacy
+    // reauthorization. Otherwise the Program would grant a max delegate for
+    // which the generation-bound Legacy Subscribe path is intentionally absent.
+    let reauthorize_legacy = action_ix(28, &subscriber.pubkey(), registry, authority, mint, source, 2, 1);
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &reauthorize_legacy)
+        .assert_err(SubscriptionsError::LegacyInstructionDisabled);
+    assert!(litesvm.get_account(&authority).is_none());
 
     let registry_after_reauth = litesvm.get_account(&registry).unwrap();
     let final_registry = AuthorityConsentRegistry::load(&registry_after_reauth.data).unwrap();
-    assert_eq!(final_registry.status, AUTHORITY_REGISTRY_ACTIVE);
-    assert_eq!(final_registry.authority_generation, 3);
-    assert_eq!(final_registry.authorize_nonce, 2);
+    let final_status = final_registry.status;
+    let final_generation = final_registry.authority_generation;
+    let final_authorize_nonce = final_registry.authorize_nonce;
+    assert_eq!(final_status, AUTHORITY_REGISTRY_REVOKED);
+    assert_eq!(final_generation, 2);
+    assert_eq!(final_authorize_nonce, 1);
     let token_after_reauth = crate::tests::utils::fetch_account::<TokenAccount>(litesvm, &source);
-    assert_eq!(token_after_reauth.delegate, Some(authority));
-    assert_eq!(token_after_reauth.delegated_amount, u64::MAX);
+    assert!(token_after_reauth.delegate.is_none());
+    assert_eq!(token_after_reauth.delegated_amount, 0);
+    assert_ne!(old_init_id, i64::MIN);
 }
 
 #[test]

@@ -420,6 +420,167 @@ Codama annotations are part of the protocol surface. Every account and instructi
 
 There is no Anchor.toml/Anchor IDL contract in this repository; do not introduce Anchor conventions by assumption.
 
+## 8.4 Fixed / Recurring VNext — ABI discovery and mandatory design gates (2026-11-20)
+
+**Status: DESIGN PROPOSAL ONLY — ABI NOT FROZEN; no discriminator, state discriminator, account order or payload is allocated by this section.**
+
+This section records source-derived compatibility facts and the security requirements that must be resolved before implementation. It must not be treated as an accepted ABI or as permission to re-enable the v0.5.0 instructions.
+
+### 8.4.1 Exact v0.5.0 compatibility facts
+
+The pinned legacy source at `364a41976c33347d092902443bbec2def9227e75` establishes the following:
+
+| Item | Fixed | Recurring |
+|---|---:|---:|
+| Legacy create discriminator | 1 | 2 |
+| Legacy transfer discriminator | 4 | 5 |
+| Legacy create payload | 32 bytes | 48 bytes |
+| Shared transfer payload | 72 bytes | 72 bytes |
+| Frozen V1 account minimum | 187 bytes | 211 bytes |
+| PDA seeds | `delegation / SubscriptionAuthority / delegator / delegatee / nonce` | same |
+
+The common `Header` is 107 bytes; its `init_id` is at offset 99. The V1 account fields following the Header are the legacy SubscriptionAuthority address, mint and the kind-specific allowance/expiry/period values. These byte layouts, offsets and PDA seeds are historical compatibility inputs, not fields to rewrite casually.
+
+The existing VNext entrypoint deliberately returns `LegacyInstructionDisabled` for CreateFixedDelegation, CreateRecurringDelegation, TransferFixed and TransferRecurring. Keep that fail-closed behavior. The existing `RevokeDelegation` route is still present for legacy Fixed/Recurring/Subscription records and closes the account under the v0.5.0 recovery rules.
+
+### 8.4.2 Confirmed replay hazard — a generation and deadline alone are insufficient
+
+The current legacy create helper rejects a delegation account only while `delegation_account.data_len() > 0`; it derives the existing PDA from the Authority, delegator, delegatee and nonce. The legacy revoke route closes a Fixed/Recurring PDA. After closure, that account has zero data and the same PDA can be initialized again.
+
+Therefore, a candidate V2 Create that checks only:
+- the current Authority Registry status/generation; and
+- a bounded signed `not_after_ts`;
+
+does **not** by itself prevent an already-signed Create from landing after the matching delegation was revoked/closed, provided the Authority generation remains active and the signed deadline has not elapsed.
+
+This is a separate replay axis from stale Authority generations. V2 must have a persistent, per-logical-delegation tombstone/revision (or an equivalently strong non-recreatable state model) that survives closure of the closeable delegation account. Revoke must atomically mark that lineage terminal before/with closing the delegation. A delayed Create for that same logical identity must remain rejected even with a fresh blockhash. A new permission must use a distinct, explicitly authorized logical identity; it must not reset the old tombstone.
+
+The old `RevokeDelegation` route must not be able to close a V2 delegation without updating the persistent tombstone. This requires an explicit account-version/dispatch boundary and a V2 revocation route that receives and validates the tombstone account. Merely appending a registry to Create/Transfer while allowing the old Revoke to close the record is not sufficient.
+
+### 8.4.3 Program identity is a prerequisite to choosing the compatibility ABI
+
+The source fork still declares the legacy Program ID `De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44`. The Product G1 remediation plan names a **new SolMint-owned Program ID** as the default independent-deployment path, while also describing a possible in-place upgrade path as an alternative.
+
+Those paths cannot share an assumed Fixed/Recurring account contract:
+
+- **Upgrade the existing Program ID:** V2 can be designed as a generation-bound continuation of the legacy ATA Authority lineage. This requires every old unbound permission-creation/transfer route to remain disabled in the upgraded dispatcher, while existing accounts are recognized only through a carefully tested compatibility/migration path. The currently implemented legacy Authority Registry bootstrap is one-time for a live legacy Authority; it deliberately rejects fresh legacy reauthorization.
+- **Deploy under a new Program ID:** the old Program remains independently callable and its old PDAs/accounts remain owned by the old Program. New VNext instructions cannot sign for or reinterpret those legacy PDAs. Fixed/Recurring capability must use the VNext Authority and its dedicated source-token-account lineage, new Program-owned delegation PDAs/state and fresh customer consent. Existing legacy permissions remain old-Program evidence until an explicit customer-authorized cutover/revocation and reconciliation; they are not silently migrated.
+
+Before freezing account metas or PDA seeds, the owner/architecture decision must select the actual deployment identity path and document the migration boundary. A new Program ID plus the old legacy Authority PDA is not a valid hybrid.
+
+### 8.4.4 Required persistent per-delegation lifecycle contract
+
+Regardless of Program identity, every V2 Fixed/Recurring logical permission needs a persistent lifecycle record whose identity is bound to:
+- the exact delegation PDA and kind (Fixed versus Recurring);
+- subscriber/delegator and delegatee;
+- mint and exact source token account;
+- the corresponding Authority Consent Registry / Authority generation.
+
+Minimum lifecycle state:
+- an explicit active/terminal status;
+- the exact identity tuple and canonical PDA/bump validation;
+- the Authority generation under which the permission was created;
+- a checked monotonic revision/action value;
+- a permanent tombstone after revoke/terminal close.
+
+The lifecycle record must survive closure and rent recovery of the larger delegation account. Its rent-payer and sponsorship policy is a separate product/security decision; do not silently charge a customer, let a sponsor control revocation, or assume the permanent record can be reclaimed. The closeable Fixed/Recurring account may retain a separately approved rent-payer field and recovery policy.
+
+The Create path must initialize the lifecycle record exactly once and fail if any record for that logical identity already exists, including a terminal one. The Transfer path must verify the record's exact identity, Active status, Authority generation and expected revision. A successful transfer and the corresponding allowance/period update must advance the lifecycle revision in the same atomic transaction. The Revoke path must compare the signed expected revision, advance it with checked arithmetic, mark the record terminal and close/refund the closeable delegation in the same transaction. CPI failure must roll back both the token transfer and state/revision changes.
+
+### 8.4.5 Candidate payload fields — review material only, not an ABI assignment
+
+If the existing legacy Fixed/Recurring semantics and account model are retained under an approved in-place-upgrade path, the following is a compact candidate field set. Offsets are shown only to make review and golden-test requirements concrete; no Rust type, discriminator or IDL definition is authorized yet.
+
+**Candidate Fixed Create payload — 40 bytes**
+
+| Offset | Length | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 8 | nonce | u64 LE |
+| 8 | 8 | amount | u64 LE |
+| 16 | 8 | expiry_ts | i64 LE |
+| 24 | 8 | expected_authority_generation | u64 LE |
+| 32 | 8 | not_after_ts | i64 LE |
+
+**Candidate Recurring Create payload — 56 bytes**
+
+| Offset | Length | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 8 | nonce | u64 LE |
+| 8 | 8 | amount_per_period | u64 LE |
+| 16 | 8 | period_length_s | u64 LE |
+| 24 | 8 | start_ts | i64 LE |
+| 32 | 8 | expiry_ts | i64 LE |
+| 40 | 8 | expected_authority_generation | u64 LE |
+| 48 | 8 | not_after_ts | i64 LE |
+
+**Candidate Fixed Transfer payload — 104 bytes**
+
+| Offset | Length | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 8 | amount | u64 LE |
+| 8 | 32 | delegator | public key |
+| 40 | 32 | mint | public key |
+| 72 | 8 | expected_remaining_amount | u64 LE |
+| 80 | 8 | expected_authority_generation | u64 LE |
+| 88 | 8 | expected_lifecycle_revision | u64 LE |
+| 96 | 8 | not_after_ts | i64 LE |
+
+**Candidate Recurring Transfer payload — 112 bytes**
+
+| Offset | Length | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 8 | amount | u64 LE |
+| 8 | 32 | delegator | public key |
+| 40 | 32 | mint | public key |
+| 72 | 8 | expected_period_start_ts | i64 LE |
+| 80 | 8 | expected_amount_pulled_in_period | u64 LE |
+| 88 | 8 | expected_authority_generation | u64 LE |
+| 96 | 8 | expected_lifecycle_revision | u64 LE |
+| 104 | 8 | not_after_ts | i64 LE |
+
+**Candidate V2 Revoke payload — 16 bytes**
+
+| Offset | Length | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 8 | expected_lifecycle_revision | u64 LE |
+| 8 | 8 | not_after_ts | i64 LE |
+
+These candidate payloads do not decide the Program ID, Authority account type, state discriminator, registry PDA seeds, optional rent payer position, receiver/rent recovery account position, or TransferHook remaining-account boundary. Those remain freeze blockers.
+
+### 8.4.6 Required account and execution invariants
+
+- Create must validate the signer as the delegator, exact Authority PDA/type, exact Registry PDA and stored identity, active Authority generation, supported mint/token program, exact source account, derived delegation PDA and delegation kind.
+- The Registry account(s) must occupy fixed, documented positions. Optional rent payer must be parsed explicitly and must never consume a Registry, token account or TransferHook remaining account.
+- Transfer must validate the current Authority Registry and the per-delegation lifecycle record before mutating allowance state or invoking token CPI. The source account must match the consent tuple; the destination and token-program rules must match the approved Fixed/Recurring product policy.
+- Fixed Transfer signs the current remaining-amount snapshot. Recurring Transfer signs the **projected** period-start and cumulative-pulled snapshot using the exact existing `validate_recurring_transfer` rollover, finite-expiry and arithmetic semantics. Do not independently reimplement calendar periods or alter the final in-bounds period rule.
+- The expected authority generation, expected lifecycle revision and `not_after_ts` are checked on-chain. The existing Authority Registry maximum deadline (24 hours) is the upper bound unless a separately reviewed protocol decision changes it.
+- TransferHook remaining accounts are passed only after all fixed protocol accounts have been parsed and validated; the Program must not treat arbitrary remaining accounts as Registry/payer aliases.
+- All writable state changes, lifecycle revision changes, token CPI and event emission remain transaction-atomic. Amount and period arithmetic uses checked integer operations.
+- The old v0.5.0 instructions remain fail-closed in the new dispatcher; no public fallback or old handler is re-enabled for compatibility.
+
+### 8.4.7 Adversarial acceptance matrix required before ABI freeze
+
+At minimum, add exact-source LiteSVM cases for:
+1. Create succeeds with exact active Authority generation and in-window deadline for both Fixed and Recurring.
+2. Create rejects stale generation, revoked Registry, wrong subscriber/mint/source/token program, wrong Authority, wrong lifecycle PDA/kind, wrong delegation PDA and duplicate logical identity.
+3. A delayed signed Create is rejected after Authority revoke, after per-delegation revoke/close, after lifecycle revision advancement, and after the signed deadline; repeat the stale attempts with a fresh blockhash.
+4. Old `RevokeDelegation` cannot close a V2 record without terminalizing the V2 lifecycle registry.
+5. Fixed Transfer rejects an old remaining-amount snapshot after partial/full transfer and never underflows.
+6. Recurring Transfer rejects stale period/usage snapshots after a successful pull and after period rollover; test skipped periods, finite expiry and the exact expiry boundary.
+7. A stale transfer signed before revoke or a later successful transfer cannot debit after that transition.
+8. Subscriber revoke is immediate under the approved product rules; sponsor recovery follows the exact existing Fixed/Recurring policy and returns rent only to the recorded payer.
+9. Optional payer spoofing, payer/registry account-position substitution and TransferHook remaining-account substitution fail closed.
+10. SPL Token and Token-2022/TransferHook success and failure paths preserve atomic allowance, lifecycle and token-balance state.
+11. The immutable v0.5.0 binary cannot reach or debit the selected VNext source account under the final Program-ID/source-account architecture.
+12. Rust payload lengths/offsets, parser truncation/trailing-byte rejection, account-meta order/flags, Codama IDL and generated client bytes match golden fixtures.
+
+### 8.4.8 Gate disposition
+
+- **PASS:** the exact legacy state sizes, payload widths, PDA seed shape, old create/revoke behavior, Registry identity model and current fail-closed dispatcher were source-inspected.
+- **BLOCKED:** final ABI freeze, because Program identity/deployment path and the per-delegation tombstone/account-version/revoke boundary must be selected together.
+- **NOT IMPLEMENTED:** Fixed/Recurring VNext account types, lifecycle registry, create/transfer/revoke handlers, IDL/client generation and the adversarial matrix.
+- **UNKNOWN:** execution of new Rust/LiteSVM tests for this design; no runtime code was changed or tested in this checkpoint.
+
 ## 9. Capability preservation requirements
 
 No feature is permanently de-scoped as a shortcut for security. Each capability must have an explicit VNext state model, authorization rule, migration behavior and regression tests.

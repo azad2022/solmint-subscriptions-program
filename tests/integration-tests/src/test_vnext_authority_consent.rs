@@ -679,3 +679,100 @@ fn vnext_durable_nonce_advance_persists_on_success_and_rejects_replay() {
     assert!(litesvm.send_transaction(replay).is_err());
     assert_eq!(read_initialized_nonce_hash(litesvm, &nonce_account), advanced_nonce_hash);
 }
+
+
+#[test]
+fn vnext_delayed_revoke_cannot_revoke_a_newer_authority_generation() {
+    let (litesvm, subscriber) = &mut setup();
+    let mint = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000, Some(subscriber.pubkey()), &[]);
+    let source = init_aux_token_account(litesvm, mint, subscriber.pubkey(), 1_000_000);
+    let (registry, authority) = derive_vnext_accounts(&subscriber.pubkey(), &mint, &source);
+
+    let nonce_authority = Keypair::new();
+    let nonce_account = create_initialized_nonce_account(litesvm, subscriber, &nonce_authority);
+    let original_nonce_hash = read_initialized_nonce_hash(litesvm, &nonce_account);
+
+    // Establish generation 1, then retain a customer-signed durable-nonce
+    // Revoke for exactly that generation and action nonce without submitting it.
+    let authorize = authorize_ix(
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        0,
+        0,
+        crate::tests::utils::current_ts() + 3_600,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &authorize).assert_ok();
+
+    let delayed_revoke_ix = revoke_ix(
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        1,
+        0,
+        crate::tests::utils::current_ts() + 3_600,
+    );
+    let delayed_revoke = sign_durable_nonce_authorization(
+        subscriber,
+        &nonce_authority,
+        &nonce_account,
+        original_nonce_hash,
+        &delayed_revoke_ix,
+    );
+
+    // A different, current customer-signed Revoke wins first. Reauthorization
+    // then establishes generation 3 and a live delegate at the same PDA.
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &delayed_revoke_ix).assert_ok();
+    let reauthorize = authorize_ix(
+        &subscriber.pubkey(),
+        registry,
+        authority,
+        mint,
+        source,
+        2,
+        1,
+        crate::tests::utils::current_ts() + 3_600,
+    );
+    build_and_send_transaction(litesvm, &[subscriber], &subscriber.pubkey(), &reauthorize).assert_ok();
+
+    let registry_before_stale_revoke = litesvm.get_account(&registry).unwrap();
+    let state_before_stale_revoke = AuthorityConsentRegistry::load(&registry_before_stale_revoke.data).unwrap();
+    assert_eq!(state_before_stale_revoke.authority_generation, 3);
+    assert_eq!(state_before_stale_revoke.authorize_nonce, 2);
+    assert_eq!(state_before_stale_revoke.revoke_nonce, 1);
+    assert_eq!(state_before_stale_revoke.status, AUTHORITY_REGISTRY_ACTIVE);
+
+    let authority_before_stale_revoke = litesvm.get_account(&authority).unwrap();
+    let authority_state = VNextSubscriptionAuthority::load(&authority_before_stale_revoke.data).unwrap();
+    assert_eq!(authority_state.authority_generation, 3);
+    let source_before_stale_revoke = fetch_account::<TokenAccount>(litesvm, &source);
+    assert_eq!(source_before_stale_revoke.delegate, Some(authority).into());
+    assert_eq!(source_before_stale_revoke.delegated_amount, u64::MAX);
+    let balance_before_stale_revoke = source_before_stale_revoke.amount;
+
+    // The retained transaction still has a valid on-chain durable nonce and
+    // deadline. It must reach the Program and fail on the consumed Revoke nonce,
+    // without closing generation 3 or revoking its token delegate.
+    litesvm
+        .send_transaction(delayed_revoke)
+        .assert_err_at(1, SubscriptionsError::StaleAuthorityActionNonce);
+
+    let registry_after_stale_revoke = litesvm.get_account(&registry).unwrap();
+    let state_after_stale_revoke = AuthorityConsentRegistry::load(&registry_after_stale_revoke.data).unwrap();
+    assert_eq!(state_after_stale_revoke.authority_generation, 3);
+    assert_eq!(state_after_stale_revoke.authorize_nonce, 2);
+    assert_eq!(state_after_stale_revoke.revoke_nonce, 1);
+    assert_eq!(state_after_stale_revoke.status, AUTHORITY_REGISTRY_ACTIVE);
+    assert!(litesvm.get_account(&authority).is_some());
+    let authority_after_stale_revoke = litesvm.get_account(&authority).unwrap();
+    let authority_state = VNextSubscriptionAuthority::load(&authority_after_stale_revoke.data).unwrap();
+    assert_eq!(authority_state.authority_generation, 3);
+    let source_after_stale_revoke = fetch_account::<TokenAccount>(litesvm, &source);
+    assert_eq!(source_after_stale_revoke.delegate, Some(authority).into());
+    assert_eq!(source_after_stale_revoke.delegated_amount, u64::MAX);
+    assert_eq!(source_after_stale_revoke.amount, balance_before_stale_revoke);
+}

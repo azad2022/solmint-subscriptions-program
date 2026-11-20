@@ -760,11 +760,11 @@ fn vnext_delayed_revoke_cannot_revoke_a_newer_authority_generation() {
     let balance_before_stale_revoke = source_before_stale_revoke.amount;
 
     // The retained transaction still has a valid on-chain durable nonce and
-    // deadline. It must reach the Program and fail on the consumed Revoke nonce,
-    // without closing generation 3 or revoking its token delegate.
+    // deadline. Its expected generation is stale, so the Program must reject it
+    // before any Registry, Authority-close or token-delegate side effect.
     litesvm
         .send_transaction(delayed_revoke)
-        .assert_err_at(1, SubscriptionsError::StaleAuthorityActionNonce);
+        .assert_err_at(1, SubscriptionsError::VNextAuthorityIdentityMismatch);
 
     let registry_after_stale_revoke = litesvm.get_account(&registry).unwrap();
     let state_after_stale_revoke = AuthorityConsentRegistry::load(&registry_after_stale_revoke.data).unwrap();

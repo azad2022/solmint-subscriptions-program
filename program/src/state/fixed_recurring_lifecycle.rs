@@ -147,6 +147,107 @@ impl FixedRecurringLifecycle {
     }
 }
 
+/// Draft payload layouts from protocol-design §8.4. These types are deliberately
+/// crate-private and are not registered with Codama or the dispatcher. Their
+/// lengths/offsets remain candidate review material until the Program identity,
+/// persistent Registry account and V2 account-meta contract are frozen.
+
+fn load_exact<T>(data: &[u8]) -> Result<&T, ProgramError> {
+    if data.len() != core::mem::size_of::<T>() {
+        return Err(SubscriptionsError::InvalidInstructionData.into());
+    }
+    Ok(unsafe { &*core::mem::transmute::<*const u8, *const T>(data.as_ptr()) })
+}
+
+#[repr(C, packed)]
+#[derive(Clone, Copy)]
+pub(crate) struct DraftFixedCreateV2Data {
+    pub nonce: u64,
+    pub amount: u64,
+    pub expiry_ts: i64,
+    pub expected_authority_generation: u64,
+    pub not_after_ts: i64,
+}
+
+impl DraftFixedCreateV2Data {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn load(data: &[u8]) -> Result<&Self, ProgramError> {
+        load_exact(data)
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Clone, Copy)]
+pub(crate) struct DraftRecurringCreateV2Data {
+    pub nonce: u64,
+    pub amount_per_period: u64,
+    pub period_length_s: u64,
+    pub start_ts: i64,
+    pub expiry_ts: i64,
+    pub expected_authority_generation: u64,
+    pub not_after_ts: i64,
+}
+
+impl DraftRecurringCreateV2Data {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn load(data: &[u8]) -> Result<&Self, ProgramError> {
+        load_exact(data)
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Clone, Copy)]
+pub(crate) struct DraftFixedTransferV2Data {
+    pub amount: u64,
+    pub delegator: Address,
+    pub mint: Address,
+    pub expected_remaining_amount: u64,
+    pub expected_authority_generation: u64,
+    pub expected_lifecycle_revision: u64,
+    pub not_after_ts: i64,
+}
+
+impl DraftFixedTransferV2Data {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn load(data: &[u8]) -> Result<&Self, ProgramError> {
+        load_exact(data)
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Clone, Copy)]
+pub(crate) struct DraftRecurringTransferV2Data {
+    pub amount: u64,
+    pub delegator: Address,
+    pub mint: Address,
+    pub expected_period_start_ts: i64,
+    pub expected_amount_pulled_in_period: u64,
+    pub expected_authority_generation: u64,
+    pub expected_lifecycle_revision: u64,
+    pub not_after_ts: i64,
+}
+
+impl DraftRecurringTransferV2Data {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn load(data: &[u8]) -> Result<&Self, ProgramError> {
+        load_exact(data)
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Clone, Copy)]
+pub(crate) struct DraftDelegationRevokeV2Data {
+    pub expected_lifecycle_revision: u64,
+    pub not_after_ts: i64,
+}
+
+impl DraftDelegationRevokeV2Data {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn load(data: &[u8]) -> Result<&Self, ProgramError> {
+        load_exact(data)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,6 +276,71 @@ mod tests {
 
     fn initialized() -> FixedRecurringLifecycle {
         FixedRecurringLifecycle::new(identity()).unwrap()
+    }
+
+    #[test]
+    fn draft_v2_payload_layouts_match_protocol_design_candidates() {
+        assert_eq!(DraftFixedCreateV2Data::LEN, 40);
+        assert_eq!(core::mem::offset_of!(DraftFixedCreateV2Data, nonce), 0);
+        assert_eq!(core::mem::offset_of!(DraftFixedCreateV2Data, amount), 8);
+        assert_eq!(core::mem::offset_of!(DraftFixedCreateV2Data, expiry_ts), 16);
+        assert_eq!(core::mem::offset_of!(DraftFixedCreateV2Data, expected_authority_generation), 24);
+        assert_eq!(core::mem::offset_of!(DraftFixedCreateV2Data, not_after_ts), 32);
+
+        assert_eq!(DraftRecurringCreateV2Data::LEN, 56);
+        assert_eq!(core::mem::offset_of!(DraftRecurringCreateV2Data, nonce), 0);
+        assert_eq!(core::mem::offset_of!(DraftRecurringCreateV2Data, amount_per_period), 8);
+        assert_eq!(core::mem::offset_of!(DraftRecurringCreateV2Data, period_length_s), 16);
+        assert_eq!(core::mem::offset_of!(DraftRecurringCreateV2Data, start_ts), 24);
+        assert_eq!(core::mem::offset_of!(DraftRecurringCreateV2Data, expiry_ts), 32);
+        assert_eq!(core::mem::offset_of!(DraftRecurringCreateV2Data, expected_authority_generation), 40);
+        assert_eq!(core::mem::offset_of!(DraftRecurringCreateV2Data, not_after_ts), 48);
+
+        assert_eq!(DraftFixedTransferV2Data::LEN, 104);
+        assert_eq!(core::mem::offset_of!(DraftFixedTransferV2Data, amount), 0);
+        assert_eq!(core::mem::offset_of!(DraftFixedTransferV2Data, delegator), 8);
+        assert_eq!(core::mem::offset_of!(DraftFixedTransferV2Data, mint), 40);
+        assert_eq!(core::mem::offset_of!(DraftFixedTransferV2Data, expected_remaining_amount), 72);
+        assert_eq!(core::mem::offset_of!(DraftFixedTransferV2Data, expected_authority_generation), 80);
+        assert_eq!(core::mem::offset_of!(DraftFixedTransferV2Data, expected_lifecycle_revision), 88);
+        assert_eq!(core::mem::offset_of!(DraftFixedTransferV2Data, not_after_ts), 96);
+
+        assert_eq!(DraftRecurringTransferV2Data::LEN, 112);
+        assert_eq!(core::mem::offset_of!(DraftRecurringTransferV2Data, amount), 0);
+        assert_eq!(core::mem::offset_of!(DraftRecurringTransferV2Data, delegator), 8);
+        assert_eq!(core::mem::offset_of!(DraftRecurringTransferV2Data, mint), 40);
+        assert_eq!(core::mem::offset_of!(DraftRecurringTransferV2Data, expected_period_start_ts), 72);
+        assert_eq!(core::mem::offset_of!(DraftRecurringTransferV2Data, expected_amount_pulled_in_period), 80);
+        assert_eq!(core::mem::offset_of!(DraftRecurringTransferV2Data, expected_authority_generation), 88);
+        assert_eq!(core::mem::offset_of!(DraftRecurringTransferV2Data, expected_lifecycle_revision), 96);
+        assert_eq!(core::mem::offset_of!(DraftRecurringTransferV2Data, not_after_ts), 104);
+
+        assert_eq!(DraftDelegationRevokeV2Data::LEN, 16);
+        assert_eq!(core::mem::offset_of!(DraftDelegationRevokeV2Data, expected_lifecycle_revision), 0);
+        assert_eq!(core::mem::offset_of!(DraftDelegationRevokeV2Data, not_after_ts), 8);
+    }
+
+    #[test]
+    fn draft_v2_payload_parsers_reject_truncation_and_trailing_bytes() {
+        macro_rules! assert_strict_payload {
+            ($payload:ty) => {{
+                let valid = vec![0u8; <$payload>::LEN];
+                assert!(<$payload>::load(&valid).is_ok());
+
+                let truncated = vec![0u8; <$payload>::LEN - 1];
+                assert!(<$payload>::load(&truncated).is_err());
+
+                let mut trailing = vec![0u8; <$payload>::LEN];
+                trailing.push(0);
+                assert!(<$payload>::load(&trailing).is_err());
+            }};
+        }
+
+        assert_strict_payload!(DraftFixedCreateV2Data);
+        assert_strict_payload!(DraftRecurringCreateV2Data);
+        assert_strict_payload!(DraftFixedTransferV2Data);
+        assert_strict_payload!(DraftRecurringTransferV2Data);
+        assert_strict_payload!(DraftDelegationRevokeV2Data);
     }
 
     #[test]

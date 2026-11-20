@@ -277,26 +277,44 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
             const revokeProposal = await wallet.stageInstructions([toKitInstruction(revokeInstruction)]);
             await wallet.approveProposal(revokeProposal);
 
-            // Submit without preflight so a failed CPI is recorded with its complete
-            // on-chain logs instead of surfacing only as a client-side InstructionError.
-            const revokeSignature = await wallet.executeProposal(
-                revokeProposal,
-                members[0],
+            // Submit the outer Squads execution transaction directly. The SDK RPC
+            // helper can reject with an InstructionError before returning its signature,
+            // which prevents this regression from inspecting the confirmed transaction.
+            // Raw submission preserves the same Vault/member authorization while making
+            // the signature, meta error and inner Program logs available on failure.
+            const revokeBlockhash = await connection.getLatestBlockhash('confirmed');
+            const revokeExecutionTransaction = await squads.transactions.vaultTransactionExecute({
+                connection,
+                blockhash: revokeBlockhash.blockhash,
+                feePayer: feePayer.publicKey,
+                multisigPda: new PublicKey(revokeProposal.multisigPda),
+                transactionIndex: revokeProposal.transactionIndex,
+                member: members[0].publicKey,
+                programId: squads.PROGRAM_ID,
+            });
+            revokeExecutionTransaction.sign([feePayer, members[0]]);
+            const revokeSignature = await connection.sendRawTransaction(
+                revokeExecutionTransaction.serialize(),
                 { skipPreflight: true, maxRetries: 0 },
             );
             const revokeConfirmation = await connection.confirmTransaction(
-                revokeSignature,
+                {
+                    signature: revokeSignature,
+                    blockhash: revokeBlockhash.blockhash,
+                    lastValidBlockHeight: revokeBlockhash.lastValidBlockHeight,
+                },
                 'confirmed',
             );
-            if (revokeConfirmation.value.err) {
-                const failedRevoke = await connection.getTransaction(revokeSignature, {
-                    commitment: 'confirmed',
-                    maxSupportedTransactionVersion: 0,
-                });
+            const revokeTransaction = await connection.getTransaction(revokeSignature, {
+                commitment: 'confirmed',
+                maxSupportedTransactionVersion: 0,
+            });
+            if (revokeConfirmation.value.err || revokeTransaction?.meta?.err) {
                 throw new Error(
-                    `SQUADS_TOMBSTONE_REVOKE_FAILED: error=${JSON.stringify(revokeConfirmation.value.err)}; logs=${(failedRevoke?.meta?.logMessages ?? []).join(' | ')}`,
+                    `SQUADS_TOMBSTONE_REVOKE_FAILED: signature=${revokeSignature}; confirmation=${JSON.stringify(revokeConfirmation.value.err)}; transaction=${JSON.stringify(revokeTransaction?.meta?.err)}; logs=${(revokeTransaction?.meta?.logMessages ?? []).join(' | ')}`,
                 );
             }
+            expect(revokeTransaction?.meta?.err ?? null).toBeNull();
 
             const [revokeProposalPda] = squads.getProposalPda({
                 multisigPda: new PublicKey(revokeProposal.multisigPda),

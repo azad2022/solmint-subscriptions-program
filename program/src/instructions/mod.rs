@@ -666,8 +666,7 @@ pub enum SubscriptionsInstruction {
     #[codama(account(name = "self_program", docs = "This Program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
     #[codama(account(
         name = "consent_registry",
-        docs = "Active generation-bound Legacy Authority Registry",
-        default_value = pda("authorityConsentRegistry", [seed("subscriber", account("subscriber")), seed("mint", account("token_mint")), seed("sourceTokenAccount", account("subscriber_ata"))])
+        docs = "Active generation-bound Legacy Authority Registry"
     ))]
     #[codama(optional_account_strategy = omitted)]
     TransferLegacySubscriptionVNextV2(#[codama(name = "transfer_data")] LegacySubscriptionTransferV2Data) = 30,

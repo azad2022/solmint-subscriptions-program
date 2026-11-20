@@ -7113,40 +7113,7 @@
             "isSigner": false,
             "isWritable": false,
             "kind": "instructionAccountNode",
-            "name": "consentRegistry",
-            "defaultValue": {
-              "kind": "pdaValueNode",
-              "pda": {
-                "kind": "pdaLinkNode",
-                "name": "authorityConsentRegistry"
-              },
-              "seeds": [
-                {
-                  "kind": "pdaSeedValueNode",
-                  "name": "subscriber",
-                  "value": {
-                    "kind": "accountValueNode",
-                    "name": "subscriber"
-                  }
-                },
-                {
-                  "kind": "pdaSeedValueNode",
-                  "name": "mint",
-                  "value": {
-                    "kind": "accountValueNode",
-                    "name": "tokenMint"
-                  }
-                },
-                {
-                  "kind": "pdaSeedValueNode",
-                  "name": "sourceTokenAccount",
-                  "value": {
-                    "kind": "accountValueNode",
-                    "name": "subscriberAta"
-                  }
-                }
-              ]
-            }
+            "name": "consentRegistry"
           }
         ],
         "arguments": [

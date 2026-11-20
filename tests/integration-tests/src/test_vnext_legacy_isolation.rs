@@ -258,15 +258,16 @@ fn set_program_owned_account(litesvm: &mut LiteSVM, address: Pubkey, data: Vec<u
 }
 
 /// The immutable v0.5.0 dispatcher must reject every additive VNext
-/// instruction discriminator (18..=27) before account processing. This is a
-/// binary-compatibility boundary test, not proof of a separate Program ID.
+/// instruction discriminator (18..=30) before account processing, including
+/// the later legacy-ATA authority and legacy-subscription VNext routes. This is
+/// a binary-compatibility boundary test, not proof of a separate Program ID.
 #[test]
 #[ignore = "requires SOLMINT_LEGACY_PROGRAM_SO from the immutable v0.5.0 build"]
 fn vnext_legacy_program_rejects_all_vnext_instruction_discriminators() {
     let mut litesvm = load_immutable_legacy_program();
     let payer = init_wallet(&mut litesvm, 100_000_000_000);
 
-    for discriminator in 18u8..=27 {
+    for discriminator in 18u8..=30 {
         let ix = Instruction { program_id: PROGRAM_ID, accounts: vec![], data: vec![discriminator] };
         let result = send_signed(&mut litesvm, &payer, ix);
         assert!(!result, "immutable v0.5.0 Program unexpectedly accepted VNext discriminator {discriminator}");

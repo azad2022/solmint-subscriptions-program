@@ -741,14 +741,19 @@ fn vnext_delayed_revoke_cannot_revoke_a_newer_authority_generation() {
 
     let registry_before_stale_revoke = litesvm.get_account(&registry).unwrap();
     let state_before_stale_revoke = AuthorityConsentRegistry::load(&registry_before_stale_revoke.data).unwrap();
-    assert_eq!(state_before_stale_revoke.authority_generation, 3);
-    assert_eq!(state_before_stale_revoke.authorize_nonce, 2);
-    assert_eq!(state_before_stale_revoke.revoke_nonce, 1);
-    assert_eq!(state_before_stale_revoke.status, AUTHORITY_REGISTRY_ACTIVE);
+    let generation_before_stale_revoke = state_before_stale_revoke.authority_generation;
+    let authorize_nonce_before_stale_revoke = state_before_stale_revoke.authorize_nonce;
+    let revoke_nonce_before_stale_revoke = state_before_stale_revoke.revoke_nonce;
+    let status_before_stale_revoke = state_before_stale_revoke.status;
+    assert_eq!(generation_before_stale_revoke, 3);
+    assert_eq!(authorize_nonce_before_stale_revoke, 2);
+    assert_eq!(revoke_nonce_before_stale_revoke, 1);
+    assert_eq!(status_before_stale_revoke, AUTHORITY_REGISTRY_ACTIVE);
 
     let authority_before_stale_revoke = litesvm.get_account(&authority).unwrap();
     let authority_state = VNextSubscriptionAuthority::load(&authority_before_stale_revoke.data).unwrap();
-    assert_eq!(authority_state.authority_generation, 3);
+    let authority_generation_before_stale_revoke = authority_state.authority_generation;
+    assert_eq!(authority_generation_before_stale_revoke, 3);
     let source_before_stale_revoke = fetch_account::<TokenAccount>(litesvm, &source);
     assert_eq!(source_before_stale_revoke.delegate, Some(authority).into());
     assert_eq!(source_before_stale_revoke.delegated_amount, u64::MAX);
@@ -763,14 +768,19 @@ fn vnext_delayed_revoke_cannot_revoke_a_newer_authority_generation() {
 
     let registry_after_stale_revoke = litesvm.get_account(&registry).unwrap();
     let state_after_stale_revoke = AuthorityConsentRegistry::load(&registry_after_stale_revoke.data).unwrap();
-    assert_eq!(state_after_stale_revoke.authority_generation, 3);
-    assert_eq!(state_after_stale_revoke.authorize_nonce, 2);
-    assert_eq!(state_after_stale_revoke.revoke_nonce, 1);
-    assert_eq!(state_after_stale_revoke.status, AUTHORITY_REGISTRY_ACTIVE);
+    let generation_after_stale_revoke = state_after_stale_revoke.authority_generation;
+    let authorize_nonce_after_stale_revoke = state_after_stale_revoke.authorize_nonce;
+    let revoke_nonce_after_stale_revoke = state_after_stale_revoke.revoke_nonce;
+    let status_after_stale_revoke = state_after_stale_revoke.status;
+    assert_eq!(generation_after_stale_revoke, 3);
+    assert_eq!(authorize_nonce_after_stale_revoke, 2);
+    assert_eq!(revoke_nonce_after_stale_revoke, 1);
+    assert_eq!(status_after_stale_revoke, AUTHORITY_REGISTRY_ACTIVE);
     assert!(litesvm.get_account(&authority).is_some());
     let authority_after_stale_revoke = litesvm.get_account(&authority).unwrap();
     let authority_state = VNextSubscriptionAuthority::load(&authority_after_stale_revoke.data).unwrap();
-    assert_eq!(authority_state.authority_generation, 3);
+    let authority_generation_after_stale_revoke = authority_state.authority_generation;
+    assert_eq!(authority_generation_after_stale_revoke, 3);
     let source_after_stale_revoke = fetch_account::<TokenAccount>(litesvm, &source);
     assert_eq!(source_after_stale_revoke.delegate, Some(authority).into());
     assert_eq!(source_after_stale_revoke.delegated_amount, u64::MAX);

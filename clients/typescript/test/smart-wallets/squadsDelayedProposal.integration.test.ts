@@ -269,14 +269,34 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
 
             // The pending generation-0 authorization would activate generation 1 if executed.
             // Revoke pre-empts generation 1 and advances the persistent tombstone to 2.
+            // Staging/approval must not execute the delayed authorization. A fresh
+            // wallet/source tuple therefore has no Registry before the tombstone revoke.
+            const registryBeforeRevoke = await connection.getAccountInfo(registryPda, 'confirmed');
+            expect(registryBeforeRevoke).toBeNull();
+
             const revokeProposal = await wallet.stageInstructions([toKitInstruction(revokeInstruction)]);
             await wallet.approveProposal(revokeProposal);
-            const revokeSignature = await wallet.executeProposal(revokeProposal);
+
+            // Submit without preflight so a failed CPI is recorded with its complete
+            // on-chain logs instead of surfacing only as a client-side InstructionError.
+            const revokeSignature = await wallet.executeProposal(
+                revokeProposal,
+                members[0],
+                { skipPreflight: true, maxRetries: 0 },
+            );
             const revokeConfirmation = await connection.confirmTransaction(
                 revokeSignature,
                 'confirmed',
             );
-            expect(revokeConfirmation.value.err).toBeNull();
+            if (revokeConfirmation.value.err) {
+                const failedRevoke = await connection.getTransaction(revokeSignature, {
+                    commitment: 'confirmed',
+                    maxSupportedTransactionVersion: 0,
+                });
+                throw new Error(
+                    `SQUADS_TOMBSTONE_REVOKE_FAILED: error=${JSON.stringify(revokeConfirmation.value.err)}; logs=${(failedRevoke?.meta?.logMessages ?? []).join(' | ')}`,
+                );
+            }
 
             const [revokeProposalPda] = squads.getProposalPda({
                 multisigPda: new PublicKey(revokeProposal.multisigPda),

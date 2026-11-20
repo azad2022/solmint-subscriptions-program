@@ -76,13 +76,8 @@ fn vnext_dispatch_keeps_legacy_fixed_recurring_routes_disabled() {
 
     for (discriminator, payload) in cases {
         let legacy_instruction = instruction(discriminator, &payload, vec![]);
-        build_and_send_transaction(
-            &mut litesvm,
-            &[&payer],
-            &payer.pubkey(),
-            &legacy_instruction,
-        )
-        .assert_err(SubscriptionsError::LegacyInstructionDisabled);
+        build_and_send_transaction(&mut litesvm, &[&payer], &payer.pubkey(), &legacy_instruction)
+            .assert_err(SubscriptionsError::LegacyInstructionDisabled);
     }
 }
 

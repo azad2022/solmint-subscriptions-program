@@ -593,7 +593,10 @@ The model enforces:
 - irreversible terminalization for revoke; a terminal permission cannot transfer or be terminalized again;
 - checked arithmetic with no partial in-memory state update on overflow.
 
-Six unit tests cover canonical Registry/generation requirements, tuple substitution, transfer replay, stale Authority generation, terminal revoke/replay and revision overflow.
+Eight unit tests cover canonical Registry/generation requirements, tuple substitution, transfer replay, stale Authority generation, terminal revoke/replay, revision overflow, candidate payload layout/offsets and strict parser lengths.
+
+
+The same internal module now contains five `crate-private` draft V2 payload structs, with strict exact-length parsers and golden candidate offsets: Fixed Create 40 bytes, Recurring Create 56 bytes, Fixed Transfer 104 bytes, Recurring Transfer 112 bytes and Revoke 16 bytes. These structures are intentionally not `CodamaType`, not in `SubscriptionsInstruction`, and not exposed in IDL or generated clients. Their field shapes are test-guarded review candidates, not an approved public ABI.
 
 **Explicitly not implemented by this checkpoint:** account serialization, account discriminator, Registry PDA seeds, persistent rent payer/funding contract, VNext Fixed/Recurring delegation account layouts, Create/Transfer/Revoke instruction payloads or discriminators, account ordering, IDL/client generation, dispatcher routes, CPI integration, and LiteSVM state-transition tests. The pure model must not be serialized directly or wired into a handler as a substitute for a Program-owned persistent account.
 

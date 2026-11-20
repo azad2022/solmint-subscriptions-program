@@ -730,3 +730,11 @@ VNext Authority, Plan and Subscription runtime handlers are present. Plan create
 - BLOCKED: the Squads tombstone-revoke integration's root cause is not yet proven or fixed; do not treat the CI as green.
 - NOT IMPLEMENTED: persistent Fixed/Recurring lifecycle Registry, account serialization/PDA contract, Create/Transfer/Revoke handlers, IDL/client and LiteSVM state-transition integration.
 - Program identity/key custody and permanent per-delegation Registry rent sponsorship/recovery remain OPEN. No key generation, deployment, transaction, Production mutation, merge or release occurred.
+
+
+### Squads tombstone-revoke diagnostic harness — 2026-11-20
+
+- On the exact-source CI failure, the approved tombstone-revoke proposal was executed through `squads.rpc.vaultTransactionExecute`. The helper surfaced a bare `InstructionError: Custom(141)` before the test received the transaction signature, so the test's subsequent `getTransaction`/log collection was unreachable.
+- The integration now constructs the same Squads Vault execution transaction explicitly, signs it with the configured fee payer and authorized member, and submits it with `skipPreflight`. It confirms using the exact blockhash/last-valid-height pair and reads transaction metadata/log messages for both success and failure.
+- The assertions are unchanged: tombstone revoke must succeed; the delayed approved authorization must fail with `StaleAuthorityGeneration`; proposal state, persistent Registry generation/nonces and token delegate/balance must remain as specified. No expected failure is converted into success and no security check is skipped.
+- This is a test-harness observability correction, not a claimed protocol fix. The actual cause of the earlier Custom(141) remains **UNKNOWN** until the new exact-source CI log includes the confirmed revoke transaction diagnostics. No Program runtime or ABI was changed in this checkpoint.

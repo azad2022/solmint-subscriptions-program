@@ -680,7 +680,6 @@ fn vnext_durable_nonce_advance_persists_on_success_and_rejects_replay() {
     assert_eq!(read_initialized_nonce_hash(litesvm, &nonce_account), advanced_nonce_hash);
 }
 
-
 #[test]
 fn vnext_delayed_revoke_cannot_revoke_a_newer_authority_generation() {
     let (litesvm, subscriber) = &mut setup();
@@ -762,9 +761,7 @@ fn vnext_delayed_revoke_cannot_revoke_a_newer_authority_generation() {
     // The retained transaction still has a valid on-chain durable nonce and
     // deadline. Its expected generation is stale, so the Program must reject it
     // before any Registry, Authority-close or token-delegate side effect.
-    litesvm
-        .send_transaction(delayed_revoke)
-        .assert_err_at(1, SubscriptionsError::VNextAuthorityIdentityMismatch);
+    litesvm.send_transaction(delayed_revoke).assert_err_at(1, SubscriptionsError::VNextAuthorityIdentityMismatch);
 
     let registry_after_stale_revoke = litesvm.get_account(&registry).unwrap();
     let state_after_stale_revoke = AuthorityConsentRegistry::load(&registry_after_stale_revoke.data).unwrap();

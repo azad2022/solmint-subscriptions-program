@@ -248,7 +248,7 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
             const revokeInstruction = new TransactionInstruction({
                 programId: SUBSCRIPTIONS_PROGRAM_ID,
                 keys: commonAccounts,
-                data: encodeAuthorityAction(19, 1n, 0n, notAfterTs),
+                data: encodeAuthorityAction(19, 0n, 0n, notAfterTs),
             });
 
             // Retain an approved generation-0 authorization without executing it.
@@ -267,8 +267,8 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
             );
             expect(approvedBeforeRevocation.status.__kind).toBe('Approved');
 
-            // A separate approved transaction invalidates the still-pending
-            // generation-1 authorization by advancing the Registry to generation 2.
+            // The delayed generation-0 authorization is approved but not executed, so
+            // the Registry is still at generation 0. Revocation advances it to 1.
             const revokeProposal = await wallet.stageInstructions([toKitInstruction(revokeInstruction)]);
             await wallet.approveProposal(revokeProposal);
             const revokeSignature = await wallet.executeProposal(revokeProposal);
@@ -342,7 +342,7 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
             const registryData = registryInfo!.data;
             expect(registryData.length).toBe(188);
             expect(registryData.readUInt8(2)).toBe(0); // revoked
-            expect(registryData.readBigUInt64LE(164)).toBe(2n);
+            expect(registryData.readBigUInt64LE(164)).toBe(1n);
             expect(registryData.readBigUInt64LE(172)).toBe(0n);
             expect(registryData.readBigUInt64LE(180)).toBe(1n);
             expect(new PublicKey(registryData.subarray(132, 164)).equals(vault)).toBe(true);

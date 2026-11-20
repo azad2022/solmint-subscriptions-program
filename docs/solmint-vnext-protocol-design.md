@@ -586,19 +586,20 @@ At minimum, add exact-source LiteSVM cases for:
 The branch now contains an internal transition model at `program/src/state/fixed_recurring_lifecycle.rs`. This is a preparatory implementation slice, not a persistent on-chain Registry and not an ABI freeze.
 
 The model enforces:
-- exact identity matching for permission kind, delegation PDA, subscriber, delegatee, mint, source token account, Authority Consent Registry and Authority generation;
+- exact identity matching for permission kind, delegation PDA, subscriber, delegatee, mint, exact source token account, token program, Authority Consent Registry and captured Authority generation;
 - canonical Authority Registry derivation from subscriber + mint + exact source token account;
+- validation of the actual Authority Consent Registry at lifecycle creation and again before every transfer/revoke transition: full tuple (including token program), canonical Registry PDA, ACTIVE status, and current generation must match both the stored identity and the signed expected generation;
 - non-zero captured Authority generation;
 - checked, one-shot lifecycle revision consumption for each successful transfer;
 - irreversible terminalization for revoke; a terminal permission cannot transfer or be terminalized again;
 - checked arithmetic with no partial in-memory state update on overflow.
 
-Eight unit tests cover canonical Registry/generation requirements, tuple substitution, transfer replay, stale Authority generation, terminal revoke/replay, revision overflow, candidate payload layout/offsets and strict parser lengths.
+Ten unit tests cover live Registry validation, canonical identity and token-program binding, tuple substitution, transfer replay, revocation and reauthorization invalidation, terminal revoke/replay, revision overflow, candidate payload layout/offsets and strict parser lengths.
 
 
 The same internal module now contains five `crate-private` draft V2 payload structs, with strict exact-length parsers and golden candidate offsets: Fixed Create 40 bytes, Recurring Create 56 bytes, Fixed Transfer 104 bytes, Recurring Transfer 112 bytes and Revoke 16 bytes. These structures are intentionally not `CodamaType`, not in `SubscriptionsInstruction`, and not exposed in IDL or generated clients. Their field shapes are test-guarded review candidates, not an approved public ABI.
 
-**Explicitly not implemented by this checkpoint:** account serialization, account discriminator, Registry PDA seeds, persistent rent payer/funding contract, VNext Fixed/Recurring delegation account layouts, Create/Transfer/Revoke instruction payloads or discriminators, account ordering, IDL/client generation, dispatcher routes, CPI integration, and LiteSVM state-transition tests. The pure model must not be serialized directly or wired into a handler as a substitute for a Program-owned persistent account.
+**Explicitly not implemented by this checkpoint:** account serialization, account discriminator, Registry PDA seeds, permanent Registry rent payer/sponsor/recovery policy, VNext Fixed/Recurring delegation account layouts, public Create/Transfer/Revoke instruction payloads or discriminators, account ordering, IDL/client generation, dispatcher routes, CPI integration, and LiteSVM state-transition tests. The pure model must not be serialized directly or wired into a handler as a substitute for a Program-owned persistent account. The model receives an already owner-checked live Authority Registry reference; actual account ownership, source-token-account ownership/mint/delegate checks, token-program account validation and on-chain atomicity remain responsibilities of the future handlers.
 
 The existing legacy Fixed/Recurring create and transfer routes remain fail-closed. The old `RevokeDelegation` path remains unchanged. Program identity also remains unresolved at executable-key level: the G1 plan's independent SolMint Program ID route remains the default, but this source still declares the legacy Program ID. No keypair/ID was generated and no deployment was attempted.
 

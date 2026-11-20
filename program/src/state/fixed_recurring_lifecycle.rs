@@ -81,12 +81,7 @@ impl FixedRecurringLifecycle {
             return Err(SubscriptionsError::LifecycleRegistryIdentityMismatch.into());
         }
 
-        Self::validate_live_authority_registry(
-            &identity,
-            registry_address,
-            registry,
-            identity.authority_generation,
-        )?;
+        Self::validate_live_authority_registry(&identity, registry_address, registry, identity.authority_generation)?;
 
         Ok(Self { identity, revision: 0, status: FixedRecurringStatus::Active })
     }
@@ -413,10 +408,8 @@ mod tests {
         let registry_bytes = authority_registry_bytes(&identity(), 0);
         let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
 
-        assert!(
-            FixedRecurringLifecycle::new(substituted_identity, &substituted_identity.authority_registry, registry)
-                .is_err()
-        );
+        assert!(FixedRecurringLifecycle::new(substituted_identity, &substituted_identity.authority_registry, registry)
+            .is_err());
     }
 
     #[test]

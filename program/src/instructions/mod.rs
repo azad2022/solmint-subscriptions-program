@@ -594,14 +594,20 @@ pub enum SubscriptionsInstruction {
         name = "subscriber",
         signer,
         writable,
-        docs = "Customer migrating or authorizing the legacy canonical ATA Authority"
+        docs = "Customer migrating an existing canonical ATA Authority"
     ))]
     #[codama(account(
         name = "consent_registry",
         writable,
-        docs = "Permanent Registry keyed by subscriber, mint and canonical ATA"
+        docs = "Permanent Registry keyed by subscriber, mint and canonical ATA",
+        default_value = pda("authorityConsentRegistry", [seed("subscriber", account("subscriber")), seed("mint", account("token_mint")), seed("sourceTokenAccount", account("source_token_account"))])
     ))]
-    #[codama(account(name = "subscription_authority", writable, docs = "Legacy SubscriptionAuthority PDA"))]
+    #[codama(account(
+        name = "subscription_authority",
+        writable,
+        docs = "Existing legacy SubscriptionAuthority PDA",
+        default_value = pda("subscriptionAuthority", [seed("user", account("subscriber")), seed("tokenMint", account("token_mint"))])
+    ))]
     #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
     #[codama(account(
         name = "source_token_account",
@@ -610,6 +616,7 @@ pub enum SubscriptionsInstruction {
     ))]
     #[codama(account(name = "system_program", docs = "System Program", default_value = program("system")))]
     #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
+    #[codama(optional_account_strategy = omitted)]
     AuthorizeLegacySubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 28,
 
     #[codama(account(
@@ -618,8 +625,18 @@ pub enum SubscriptionsInstruction {
         writable,
         docs = "Customer revoking the legacy canonical ATA Authority"
     ))]
-    #[codama(account(name = "consent_registry", writable, docs = "Permanent Authority generation tombstone"))]
-    #[codama(account(name = "subscription_authority", writable, docs = "Legacy Authority PDA; may be absent"))]
+    #[codama(account(
+        name = "consent_registry",
+        writable,
+        docs = "Permanent Authority generation tombstone",
+        default_value = pda("authorityConsentRegistry", [seed("subscriber", account("subscriber")), seed("mint", account("token_mint")), seed("sourceTokenAccount", account("source_token_account"))])
+    ))]
+    #[codama(account(
+        name = "subscription_authority",
+        writable,
+        docs = "Legacy Authority PDA; may be absent",
+        default_value = pda("subscriptionAuthority", [seed("user", account("subscriber")), seed("tokenMint", account("token_mint"))])
+    ))]
     #[codama(account(name = "token_mint", docs = "SPL Token or Token-2022 mint"))]
     #[codama(account(
         name = "source_token_account",
@@ -632,7 +649,7 @@ pub enum SubscriptionsInstruction {
         name = "receiver",
         writable,
         optional,
-        docs = "Required only when the old Authority rent payer differs from the subscriber"
+        docs = "Required if the recorded legacy Authority rent payer differs from the subscriber"
     ))]
     #[codama(optional_account_strategy = omitted)]
     RevokeLegacySubscriptionAuthorityVNext(#[codama(name = "authority_action_data")] AuthorityActionData) = 29,
@@ -647,7 +664,12 @@ pub enum SubscriptionsInstruction {
     #[codama(account(name = "token_program", docs = "SPL Token or Token-2022 program"))]
     #[codama(account(name = "event_authority", docs = "Event authority PDA", default_value = pda("eventAuthority")))]
     #[codama(account(name = "self_program", docs = "This Program for self-CPI", default_value = public_key("De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44")))]
-    #[codama(account(name = "consent_registry", docs = "Active legacy Authority generation Registry"))]
+    #[codama(account(
+        name = "consent_registry",
+        docs = "Active generation-bound Legacy Authority Registry",
+        default_value = pda("authorityConsentRegistry", [seed("subscriber", account("subscriber")), seed("mint", account("token_mint")), seed("sourceTokenAccount", account("subscriber_ata"))])
+    ))]
+    #[codama(optional_account_strategy = omitted)]
     TransferLegacySubscriptionVNextV2(#[codama(name = "transfer_data")] LegacySubscriptionTransferV2Data) = 30,
 
     #[codama(skip)]

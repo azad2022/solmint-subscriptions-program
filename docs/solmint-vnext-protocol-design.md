@@ -707,3 +707,26 @@ Before G1-3, the following must be checked in a single reviewed change set:
 7. Every supported capability has explicit state, authorization, migration and regression requirements.
 
 VNext Authority, Plan and Subscription runtime handlers are present. Plan create/update and Subscription Subscribe/Cancel/CancelNow/Resume/re-subscribe use persistent revision registries; VNext transfer revalidates live Plan/Subscription revisions, Authority generation and a bounded deadline. LiteSVM tests cover delayed signed Authority authorization, Plan ABA update, Subscription lifecycle transitions, valid token transfer, stale Subscribe/Transfer and legacy Program non-ATA isolation. Exact-source SolMint CI run 42271881452 pinned Fork source aa6f7c0 and passed: 93 Program unit tests; deterministic SBF build (SHA-256 b8cd8b12e8b629d30d09632c11f8b9398e9a30f77585a731aa907da1194b9fe1); full LiteSVM suite (279 passed, 1 ignored); immutable legacy v0.5.0 SBF build; legacy non-ATA isolation regression (1 passed); and structural Codama IDL equality (27 instructions, 12 accounts, 19 defined types, 12 PDAs; canonical SHA-256 f74110e13a2cf991f7afd823e50bf2b4d2ae55c221f183cb45635352479535ad). The source still declares the legacy Program ID, and no independent deployment Program ID/keypair has been generated. VNext-specific TransferHook adversarial tests, complete legacy path isolation, fixed/recurring VNext delegations, finite Plans, deletion/recovery, migration and independent audit remain open. No signer, Devnet/Mainnet transaction, Production database/configuration, customer consent, accounting entry or customer funds were changed.
+
+
+## 2026-11-20 — Bounded Fixed/Recurring deadlines and CI regression
+
+### Bounded lifecycle-action deadline implementation
+- The internal Fixed/Recurring lifecycle transition model now passes `now_ts` and signed `not_after_ts` to construction, transfer and terminal revoke.
+- All three operations call the existing `AuthorityConsentRegistry::validate_action_deadline`; there is no parallel deadline constant or alternative policy.
+- The shared policy is inclusive at equality and rejects expired actions and deadlines more than 24 hours from execution time. The model tests rejection at both boundaries and acceptance at the exact maximum boundary.
+- This remains a pure in-memory transition model. It does not replace handler-level Clock reads, owner checks, or persistent on-chain state.
+
+### Exact CI regression evidence
+- Product CI run `44754893723`, job `subscription-vnext-authority-registry`, failed at `cargo fmt -p subscriptions-program -- --check`. The exact Rustfmt diff was limited to seven formatting blocks in the bounded-deadline test additions.
+- Product CI run `44754893723`, job `subscription-vnext-squads-sdk`, failed in the real delayed Squads proposal integration. The failure was `InstructionError: [0, { Custom: 141 }]`, where Program error 141 is `StaleAuthorityGeneration`. The deadline-expiry test in the same file passed. This is treated as a real integration failure, not a formatting or network warning.
+- Rustfmt corrections were committed in Program `fa8af00e5d0388d6ec8d14b9189efa7046994bf6`.
+- The Squads integration test was strengthened in Program commit `f143a3e1a16ddbcfcfc83863995a0b4779455b1d`: it asserts the delayed proposal has not created a Registry before the tombstone revoke, submits the revoke without preflight, and includes confirmed transaction logs in any failure. It does not weaken the expected success or stale-generation assertions.
+- Product CI commit `c5ca3ff5fcae10d650c6cf374f9f47d1629e31ec` pins all four existing Program source references to `f143a3e1a16ddbcfcfc83863995a0b4779455b1d`.
+
+### Gate status
+- PASS: source-level Rustfmt corrections committed; bounded deadline policy reused consistently by the Fixed/Recurring model; integration test diagnostics improved without changing protocol expectations.
+- UNKNOWN: Rustfmt on exact Program HEAD `f143a3e...`, Program unit tests, LiteSVM, and current exact-head CI. The rerun was not awaited.
+- BLOCKED: the Squads tombstone-revoke integration's root cause is not yet proven or fixed; do not treat the CI as green.
+- NOT IMPLEMENTED: persistent Fixed/Recurring lifecycle Registry, account serialization/PDA contract, Create/Transfer/Revoke handlers, IDL/client and LiteSVM state-transition integration.
+- Program identity/key custody and permanent per-delegation Registry rent sponsorship/recovery remain OPEN. No key generation, deployment, transaction, Production mutation, merge or release occurred.

@@ -581,6 +581,24 @@ At minimum, add exact-source LiteSVM cases for:
 - **NOT IMPLEMENTED:** Fixed/Recurring VNext account types, lifecycle registry, create/transfer/revoke handlers, IDL/client generation and the adversarial matrix.
 - **UNKNOWN:** execution of new Rust/LiteSVM tests for this design; no runtime code was changed or tested in this checkpoint.
 
+### Implementation checkpoint — Fixed/Recurring lifecycle transition model (2026-11-20)
+
+The branch now contains an internal transition model at `program/src/state/fixed_recurring_lifecycle.rs`. This is a preparatory implementation slice, not a persistent on-chain Registry and not an ABI freeze.
+
+The model enforces:
+- exact identity matching for permission kind, delegation PDA, subscriber, delegatee, mint, source token account, Authority Consent Registry and Authority generation;
+- canonical Authority Registry derivation from subscriber + mint + exact source token account;
+- non-zero captured Authority generation;
+- checked, one-shot lifecycle revision consumption for each successful transfer;
+- irreversible terminalization for revoke; a terminal permission cannot transfer or be terminalized again;
+- checked arithmetic with no partial in-memory state update on overflow.
+
+Six unit tests cover canonical Registry/generation requirements, tuple substitution, transfer replay, stale Authority generation, terminal revoke/replay and revision overflow.
+
+**Explicitly not implemented by this checkpoint:** account serialization, account discriminator, Registry PDA seeds, persistent rent payer/funding contract, VNext Fixed/Recurring delegation account layouts, Create/Transfer/Revoke instruction payloads or discriminators, account ordering, IDL/client generation, dispatcher routes, CPI integration, and LiteSVM state-transition tests. The pure model must not be serialized directly or wired into a handler as a substitute for a Program-owned persistent account.
+
+The existing legacy Fixed/Recurring create and transfer routes remain fail-closed. The old `RevokeDelegation` path remains unchanged. Program identity also remains unresolved at executable-key level: the G1 plan's independent SolMint Program ID route remains the default, but this source still declares the legacy Program ID. No keypair/ID was generated and no deployment was attempted.
+
 ## 9. Capability preservation requirements
 
 No feature is permanently de-scoped as a shortcut for security. Each capability must have an explicit VNext state model, authorization rule, migration behavior and regression tests.

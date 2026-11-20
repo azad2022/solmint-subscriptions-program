@@ -3,6 +3,9 @@
 # host builds never compile this cdylib (its entrypoint emits BPF-only items).
 [workspace]
 
+[workspace.metadata.cli]
+solana = "3.1.10"
+
 [package]
 name = "transfer-hook-example"
 version = "0.1.0"

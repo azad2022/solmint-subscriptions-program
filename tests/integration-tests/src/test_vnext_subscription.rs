@@ -61,6 +61,31 @@ fn event_authority() -> Pubkey {
     Pubkey::find_program_address(&[b"event_authority"], &PROGRAM_ID).0
 }
 
+/// The VNext dispatcher must keep every legacy Fixed/Recurring permission
+/// creation and transfer route fail-closed until their generation-bound VNext
+/// replacements, persistent lifecycle tombstones and V2 revoke path exist.
+#[test]
+fn vnext_dispatch_keeps_legacy_fixed_recurring_routes_disabled() {
+    let (mut litesvm, payer) = setup();
+    let cases: [(u8, Vec<u8>); 4] = [
+        (1, vec![0; 32]), // CreateFixedDelegationData
+        (2, vec![0; 48]), // CreateRecurringDelegationData
+        (4, vec![0; 72]), // TransferData / TransferFixed
+        (5, vec![0; 72]), // TransferData / TransferRecurring
+    ];
+
+    for (discriminator, payload) in cases {
+        let legacy_instruction = instruction(discriminator, &payload, vec![]);
+        build_and_send_transaction(
+            &mut litesvm,
+            &[&payer],
+            &payer.pubkey(),
+            &legacy_instruction,
+        )
+        .assert_err(SubscriptionsError::LegacyInstructionDisabled);
+    }
+}
+
 fn metadata(value: &str) -> [u8; 128] {
     let mut result = [0u8; 128];
     result[..value.len()].copy_from_slice(value.as_bytes());

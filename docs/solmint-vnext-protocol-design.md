@@ -594,10 +594,11 @@ The model enforces:
 - irreversible terminalization for revoke; a terminal permission cannot transfer or be terminalized again;
 - checked arithmetic with no partial in-memory state update on overflow.
 
-Ten unit tests cover live Registry validation, canonical identity and token-program binding, tuple substitution, transfer replay, revocation and reauthorization invalidation, terminal revoke/replay, revision overflow, candidate payload layout/offsets and strict parser lengths.
+Eleven unit tests cover live Registry validation, canonical identity and token-program binding, tuple substitution, transfer replay, revocation and reauthorization invalidation, terminal revoke/replay, revision overflow, candidate payload layout/offsets, strict parser lengths and bounded deadlines for lifecycle creation/transfer/revoke.
 
 
 The same internal module now contains five `crate-private` draft V2 payload structs, with strict exact-length parsers and golden candidate offsets: Fixed Create 40 bytes, Recurring Create 56 bytes, Fixed Transfer 104 bytes, Recurring Transfer 112 bytes and Revoke 16 bytes. These structures are intentionally not `CodamaType`, not in `SubscriptionsInstruction`, and not exposed in IDL or generated clients. Their field shapes are test-guarded review candidates, not an approved public ABI.
+Lifecycle creation, transfer and revoke transitions now also consume `not_after_ts` and call the existing `AuthorityConsentRegistry::validate_action_deadline`; no parallel deadline policy is introduced. Tests reject expired and over-24-hour approvals and accept the inclusive maximum boundary. This is still an internal transition model, not a live instruction handler.
 
 **Explicitly not implemented by this checkpoint:** account serialization, account discriminator, Registry PDA seeds, permanent Registry rent payer/sponsor/recovery policy, VNext Fixed/Recurring delegation account layouts, public Create/Transfer/Revoke instruction payloads or discriminators, account ordering, IDL/client generation, dispatcher routes, CPI integration, and LiteSVM state-transition tests. The pure model must not be serialized directly or wired into a handler as a substitute for a Program-owned persistent account. The model receives an already owner-checked live Authority Registry reference; actual account ownership, source-token-account ownership/mint/delegate checks, token-program account validation and on-chain atomicity remain responsibilities of the future handlers.
 

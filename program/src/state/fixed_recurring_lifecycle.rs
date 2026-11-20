@@ -64,9 +64,13 @@ impl FixedRecurringLifecycle {
     ///
     /// The caller must separately create the permanent PDA exactly once and
     /// atomically create the associated delegation account. A non-zero
-    /// Authority generation and canonical Authority Registry are mandatory.
-    /// The caller must also validate the live Registry before every action.
-    pub fn new(identity: FixedRecurringIdentity) -> Result<Self, ProgramError> {
+    /// Authority generation and canonical, ACTIVE Authority Registry are mandatory.
+    /// The live Registry is checked here and again before every subsequent action.
+    pub fn new(
+        identity: FixedRecurringIdentity,
+        registry_address: &Address,
+        registry: &AuthorityConsentRegistry,
+    ) -> Result<Self, ProgramError> {
         if identity.authority_generation == 0 {
             return Err(SubscriptionsError::StaleAuthorityGeneration.into());
         }
@@ -79,6 +83,13 @@ impl FixedRecurringLifecycle {
         if expected_registry != identity.authority_registry {
             return Err(SubscriptionsError::LifecycleRegistryIdentityMismatch.into());
         }
+
+        Self::validate_live_authority_registry(
+            &identity,
+            registry_address,
+            registry,
+            identity.authority_generation,
+        )?;
 
         Ok(Self { identity, revision: 0, status: FixedRecurringStatus::Active })
     }
@@ -106,13 +117,12 @@ impl FixedRecurringLifecycle {
     /// The handler must pass the live Program-owned Registry account after
     /// checking account ownership. This prevents a signed payload or a stale
     /// cached generation from substituting for current customer consent.
-    fn validate_authority_registry(
-        &self,
+    fn validate_live_authority_registry(
+        identity: &FixedRecurringIdentity,
         registry_address: &Address,
         registry: &AuthorityConsentRegistry,
         expected_generation: u64,
     ) -> Result<(), ProgramError> {
-        let identity = self.identity;
         registry.validate_identity(
             registry_address,
             &identity.subscriber,
@@ -141,7 +151,7 @@ impl FixedRecurringLifecycle {
         expected_generation: u64,
         expected_revision: u64,
     ) -> Result<(), ProgramError> {
-        self.validate_authority_registry(registry_address, registry, expected_generation)?;
+        Self::validate_live_authority_registry(&self.identity, registry_address, registry, expected_generation)?;
         if self.status != FixedRecurringStatus::Active {
             return Err(SubscriptionsError::Unauthorized.into());
         }
@@ -358,18 +368,29 @@ mod tests {
     }
 
     fn initialized() -> FixedRecurringLifecycle {
-        FixedRecurringLifecycle::new(identity()).unwrap()
+        let identity = identity();
+        let registry_bytes = authority_registry_bytes(&identity, 0);
+        let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
+        FixedRecurringLifecycle::new(identity, &identity.authority_registry, registry).unwrap()
     }
 
     #[test]
     fn identity_requires_the_canonical_authority_registry_and_nonzero_generation() {
-        let mut wrong_registry = identity();
-        wrong_registry.authority_registry = addr(9);
-        assert!(FixedRecurringLifecycle::new(wrong_registry).is_err());
+        let original = identity();
+        let registry_bytes = authority_registry_bytes(&original, 0);
+        let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
 
-        let mut zero_generation = identity();
+        let mut wrong_registry = original;
+        wrong_registry.authority_registry = addr(9);
+        assert!(FixedRecurringLifecycle::new(wrong_registry, &original.authority_registry, registry).is_err());
+
+        let mut zero_generation = original;
         zero_generation.authority_generation = 0;
-        assert!(FixedRecurringLifecycle::new(zero_generation).is_err());
+        assert!(FixedRecurringLifecycle::new(zero_generation, &original.authority_registry, registry).is_err());
+
+        let revoked_bytes = authority_registry_bytes(&original, 1);
+        let revoked = AuthorityConsentRegistry::load(&revoked_bytes).unwrap();
+        assert!(FixedRecurringLifecycle::new(original, &original.authority_registry, revoked).is_err());
     }
 
     #[test]
@@ -398,23 +419,17 @@ mod tests {
     fn live_authority_registry_must_match_exact_token_program() {
         let mut substituted_identity = identity();
         substituted_identity.token_program = addr(7);
-        let mut state = FixedRecurringLifecycle::new(substituted_identity).unwrap();
-
-        let actual_identity = identity();
-        let registry_bytes = authority_registry_bytes(&actual_identity, 0);
+        let registry_bytes = authority_registry_bytes(&identity(), 0);
         let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
 
         assert!(
-            state
-                .consume_transfer(
-                    &actual_identity.authority_registry,
-                    registry,
-                    1,
-                    0,
-                )
-                .is_err()
+            FixedRecurringLifecycle::new(
+                substituted_identity,
+                &substituted_identity.authority_registry,
+                registry,
+            )
+            .is_err()
         );
-        assert_eq!(state.revision, 0);
     }
 
     #[test]

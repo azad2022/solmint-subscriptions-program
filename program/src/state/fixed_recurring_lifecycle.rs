@@ -378,11 +378,14 @@ mod tests {
 
         let mut wrong_registry = original;
         wrong_registry.authority_registry = addr(9);
-        assert!(FixedRecurringLifecycle::new(wrong_registry, &original.authority_registry, registry, 1_000, 1_900).is_err());
+        assert!(
+            FixedRecurringLifecycle::new(wrong_registry, &original.authority_registry, registry, 1_000, 1_900).is_err()
+        );
 
         let mut zero_generation = original;
         zero_generation.authority_generation = 0;
-        assert!(FixedRecurringLifecycle::new(zero_generation, &original.authority_registry, registry, 1_000, 1_900).is_err());
+        assert!(FixedRecurringLifecycle::new(zero_generation, &original.authority_registry, registry, 1_000, 1_900)
+            .is_err());
 
         let revoked_bytes = authority_registry_bytes(&original, 1);
         let revoked = AuthorityConsentRegistry::load(&revoked_bytes).unwrap();
@@ -395,52 +398,22 @@ mod tests {
         let registry_bytes = authority_registry_bytes(&identity, 0);
         let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
 
-        assert!(
-            FixedRecurringLifecycle::new(identity, &identity.authority_registry, registry, 1_000, 999).is_err()
-        );
-        assert!(
-            FixedRecurringLifecycle::new(identity, &identity.authority_registry, registry, 1_000, 87_401).is_err()
-        );
+        assert!(FixedRecurringLifecycle::new(identity, &identity.authority_registry, registry, 1_000, 999).is_err());
+        assert!(FixedRecurringLifecycle::new(identity, &identity.authority_registry, registry, 1_000, 87_401).is_err());
 
         let mut state =
             FixedRecurringLifecycle::new(identity, &identity.authority_registry, registry, 1_000, 87_400).unwrap();
 
-        assert!(
-            state
-                .consume_transfer(&identity.authority_registry, registry, 1, 0, 1_000, 999)
-                .is_err()
-        );
-        assert!(
-            state
-                .consume_transfer(&identity.authority_registry, registry, 1, 0, 1_000, 87_401)
-                .is_err()
-        );
+        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, 0, 1_000, 999).is_err());
+        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, 0, 1_000, 87_401).is_err());
         assert_eq!(state.revision, 0);
 
         // Equality at the maximum 24-hour boundary is accepted by the shared Registry rule.
-        assert_eq!(
-            state
-                .consume_transfer(&identity.authority_registry, registry, 1, 0, 1_000, 87_400)
-                .unwrap(),
-            1
-        );
+        assert_eq!(state.consume_transfer(&identity.authority_registry, registry, 1, 0, 1_000, 87_400).unwrap(), 1);
 
-        assert!(
-            state
-                .terminalize(&identity.authority_registry, registry, 1, 1, 1_000, 999)
-                .is_err()
-        );
-        assert!(
-            state
-                .terminalize(&identity.authority_registry, registry, 1, 1, 1_000, 87_401)
-                .is_err()
-        );
-        assert_eq!(
-            state
-                .terminalize(&identity.authority_registry, registry, 1, 1, 1_000, 87_400)
-                .unwrap(),
-            2
-        );
+        assert!(state.terminalize(&identity.authority_registry, registry, 1, 1, 1_000, 999).is_err());
+        assert!(state.terminalize(&identity.authority_registry, registry, 1, 1, 1_000, 87_401).is_err());
+        assert_eq!(state.terminalize(&identity.authority_registry, registry, 1, 1, 1_000, 87_400).unwrap(), 2);
         assert_eq!(state.status, FixedRecurringStatus::Terminal);
     }
 
@@ -473,8 +446,14 @@ mod tests {
         let registry_bytes = authority_registry_bytes(&identity(), 0);
         let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
 
-        assert!(FixedRecurringLifecycle::new(substituted_identity, &substituted_identity.authority_registry, registry, 1_000, 1_900)
-            .is_err());
+        assert!(FixedRecurringLifecycle::new(
+            substituted_identity,
+            &substituted_identity.authority_registry,
+            registry,
+            1_000,
+            1_900
+        )
+        .is_err());
     }
 
     #[test]

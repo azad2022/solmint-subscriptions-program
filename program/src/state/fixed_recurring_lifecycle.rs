@@ -5,14 +5,14 @@
 //! instruction discriminator, account order, or rent policy is frozen. Do not
 //! serialize this Rust struct directly or enable a dispatcher route from it.
 //!
-//! The eventual persistent record must be customer-funded, non-closeable, and
-//! keyed to the exact logical delegation. This model mirrors those invariants:
-//! a permission is bound to its original Authority generation, each successful
-//! transfer consumes one revision, and terminal revoke can never be reversed.
+//! The eventual persistent record must be non-closeable and keyed to the exact
+//! logical delegation. Its rent payer/sponsor/recovery policy remains unresolved.
+//! Every operation must revalidate the live Authority Consent Registry, its exact
+//! token-program identity, active status and current generation.
 
 use pinocchio::{error::ProgramError, Address};
 
-use super::authority_consent_registry::AuthorityConsentRegistry;
+use super::authority_consent_registry::{AuthorityConsentRegistry, AUTHORITY_REGISTRY_ACTIVE};
 use crate::SubscriptionsError;
 
 /// Exact permission kind. Kind is part of the stored identity, not an
@@ -33,7 +33,7 @@ pub(crate) enum FixedRecurringStatus {
 }
 
 /// Immutable identity captured when a VNext Fixed/Recurring permission is
-/// created. The exact source account and Authority Registry are mandatory.
+/// created. The exact source account, token program and Authority Registry are mandatory.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FixedRecurringIdentity {
     pub kind: FixedRecurringKind,
@@ -42,6 +42,7 @@ pub(crate) struct FixedRecurringIdentity {
     pub delegatee: Address,
     pub mint: Address,
     pub source_token_account: Address,
+    pub token_program: Address,
     pub authority_registry: Address,
     pub authority_generation: u64,
 }
@@ -64,6 +65,7 @@ impl FixedRecurringLifecycle {
     /// The caller must separately create the permanent PDA exactly once and
     /// atomically create the associated delegation account. A non-zero
     /// Authority generation and canonical Authority Registry are mandatory.
+    /// The caller must also validate the live Registry before every action.
     pub fn new(identity: FixedRecurringIdentity) -> Result<Self, ProgramError> {
         if identity.authority_generation == 0 {
             return Err(SubscriptionsError::StaleAuthorityGeneration.into());
@@ -90,6 +92,7 @@ impl FixedRecurringLifecycle {
             || actual.delegatee != expected.delegatee
             || actual.mint != expected.mint
             || actual.source_token_account != expected.source_token_account
+            || actual.token_program != expected.token_program
             || actual.authority_registry != expected.authority_registry
             || actual.authority_generation != expected.authority_generation
         {
@@ -98,14 +101,49 @@ impl FixedRecurringLifecycle {
         Ok(())
     }
 
-    /// Verifies that a signed operation targets the currently active
-    /// delegation, exact Authority generation, and unconsumed lifecycle revision.
-    fn validate_action(&self, expected_generation: u64, expected_revision: u64) -> Result<(), ProgramError> {
+    /// Revalidates the actual Authority Registry account supplied by the caller.
+    ///
+    /// The handler must pass the live Program-owned Registry account after
+    /// checking account ownership. This prevents a signed payload or a stale
+    /// cached generation from substituting for current customer consent.
+    fn validate_authority_registry(
+        &self,
+        registry_address: &Address,
+        registry: &AuthorityConsentRegistry,
+        expected_generation: u64,
+    ) -> Result<(), ProgramError> {
+        let identity = self.identity;
+        registry.validate_identity(
+            registry_address,
+            &identity.subscriber,
+            &identity.mint,
+            &identity.source_token_account,
+            &identity.token_program,
+        )?;
+
+        let status = registry.status;
+        let current_generation = registry.authority_generation;
+        if status != AUTHORITY_REGISTRY_ACTIVE
+            || current_generation != identity.authority_generation
+            || current_generation != expected_generation
+        {
+            return Err(SubscriptionsError::StaleAuthorityGeneration.into());
+        }
+        Ok(())
+    }
+
+    /// Verifies that a signed operation targets the current active Authority
+    /// generation and unconsumed lifecycle revision.
+    fn validate_action(
+        &self,
+        registry_address: &Address,
+        registry: &AuthorityConsentRegistry,
+        expected_generation: u64,
+        expected_revision: u64,
+    ) -> Result<(), ProgramError> {
+        self.validate_authority_registry(registry_address, registry, expected_generation)?;
         if self.status != FixedRecurringStatus::Active {
             return Err(SubscriptionsError::Unauthorized.into());
-        }
-        if self.identity.authority_generation != expected_generation {
-            return Err(SubscriptionsError::StaleAuthorityGeneration.into());
         }
         if self.revision != expected_revision {
             return Err(SubscriptionsError::StaleSubscriptionLifecycleRevision.into());
@@ -120,10 +158,12 @@ impl FixedRecurringLifecycle {
     /// must roll back all three on CPI failure.
     pub fn consume_transfer(
         &mut self,
+        registry_address: &Address,
+        registry: &AuthorityConsentRegistry,
         expected_generation: u64,
         expected_revision: u64,
     ) -> Result<u64, ProgramError> {
-        self.validate_action(expected_generation, expected_revision)?;
+        self.validate_action(registry_address, registry, expected_generation, expected_revision)?;
         let next_revision = self.revision.checked_add(1).ok_or(SubscriptionsError::ArithmeticOverflow)?;
         self.revision = next_revision;
         Ok(next_revision)
@@ -136,10 +176,12 @@ impl FixedRecurringLifecycle {
     /// record itself must never be closed or reset.
     pub fn terminalize(
         &mut self,
+        registry_address: &Address,
+        registry: &AuthorityConsentRegistry,
         expected_generation: u64,
         expected_revision: u64,
     ) -> Result<u64, ProgramError> {
-        self.validate_action(expected_generation, expected_revision)?;
+        self.validate_action(registry_address, registry, expected_generation, expected_revision)?;
         let next_revision = self.revision.checked_add(1).ok_or(SubscriptionsError::ArithmeticOverflow)?;
         self.revision = next_revision;
         self.status = FixedRecurringStatus::Terminal;
@@ -260,6 +302,7 @@ mod tests {
         let subscriber = addr(1);
         let mint = addr(2);
         let source = addr(3);
+        let token_program = addr(6);
         let authority_registry = AuthorityConsentRegistry::find_pda(&subscriber, &mint, &source).0;
 
         FixedRecurringIdentity {
@@ -269,13 +312,181 @@ mod tests {
             delegatee: addr(5),
             mint,
             source_token_account: source,
+            token_program,
             authority_registry,
             authority_generation: 1,
         }
     }
 
+    /// mode 0 = active generation 1; mode 1 = revoked generation 2;
+    /// mode 2 = active generation 3 after revoke + explicit reauthorization.
+    fn authority_registry_bytes(
+        identity: &FixedRecurringIdentity,
+        mode: u8,
+    ) -> [u8; AuthorityConsentRegistry::LEN] {
+        let (registry_address, bump) = AuthorityConsentRegistry::find_pda(
+            &identity.subscriber,
+            &identity.mint,
+            &identity.source_token_account,
+        );
+        assert_eq!(registry_address, identity.authority_registry);
+
+        let mut bytes = [0u8; AuthorityConsentRegistry::LEN];
+        AuthorityConsentRegistry::init(
+            &mut bytes,
+            &identity.subscriber,
+            &identity.mint,
+            &identity.source_token_account,
+            &identity.token_program,
+            &identity.subscriber,
+            bump,
+        )
+        .unwrap();
+
+        {
+            let registry = AuthorityConsentRegistry::load_mut(&mut bytes).unwrap();
+            registry.authorize(0, 0, 1_000, 1_900).unwrap();
+            if mode >= 1 {
+                registry.revoke(1, 0, 1_000, 1_900).unwrap();
+            }
+            if mode >= 2 {
+                registry.authorize(2, 1, 1_000, 1_900).unwrap();
+            }
+        }
+
+        bytes
+    }
+
     fn initialized() -> FixedRecurringLifecycle {
         FixedRecurringLifecycle::new(identity()).unwrap()
+    }
+
+    #[test]
+    fn identity_requires_the_canonical_authority_registry_and_nonzero_generation() {
+        let mut wrong_registry = identity();
+        wrong_registry.authority_registry = addr(9);
+        assert!(FixedRecurringLifecycle::new(wrong_registry).is_err());
+
+        let mut zero_generation = identity();
+        zero_generation.authority_generation = 0;
+        assert!(FixedRecurringLifecycle::new(zero_generation).is_err());
+    }
+
+    #[test]
+    fn identity_rejects_substitution_of_each_permission_component() {
+        let state = initialized();
+        let original = identity();
+
+        let mut variants = [original; 9];
+        variants[0].kind = FixedRecurringKind::Recurring;
+        variants[1].delegation = addr(10);
+        variants[2].subscriber = addr(11);
+        variants[3].delegatee = addr(12);
+        variants[4].mint = addr(13);
+        variants[5].source_token_account = addr(14);
+        variants[6].token_program = addr(15);
+        variants[7].authority_registry = addr(16);
+        variants[8].authority_generation = 2;
+
+        for candidate in variants {
+            assert!(state.validate_identity(&candidate).is_err());
+        }
+        assert!(state.validate_identity(&original).is_ok());
+    }
+
+    #[test]
+    fn live_authority_registry_must_match_exact_token_program() {
+        let mut substituted_identity = identity();
+        substituted_identity.token_program = addr(7);
+        let mut state = FixedRecurringLifecycle::new(substituted_identity).unwrap();
+
+        let actual_identity = identity();
+        let registry_bytes = authority_registry_bytes(&actual_identity, 0);
+        let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
+
+        assert!(
+            state
+                .consume_transfer(
+                    &actual_identity.authority_registry,
+                    registry,
+                    1,
+                    0,
+                )
+                .is_err()
+        );
+        assert_eq!(state.revision, 0);
+    }
+
+    #[test]
+    fn each_successful_transfer_consumes_a_one_shot_revision() {
+        let mut state = initialized();
+        let identity = identity();
+        let registry_bytes = authority_registry_bytes(&identity, 0);
+        let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
+
+        assert_eq!(state.consume_transfer(&identity.authority_registry, registry, 1, 0).unwrap(), 1);
+        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, 0).is_err());
+        assert_eq!(state.revision, 1);
+
+        assert_eq!(state.consume_transfer(&identity.authority_registry, registry, 1, 1).unwrap(), 2);
+        assert_eq!(state.revision, 2);
+    }
+
+    #[test]
+    fn authority_reauthorization_does_not_revive_an_old_permission() {
+        let mut state = initialized();
+        let identity = identity();
+        let registry_bytes = authority_registry_bytes(&identity, 2);
+        let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
+
+        assert!(state.consume_transfer(&identity.authority_registry, registry, 3, 0).is_err());
+        assert_eq!(state.revision, 0);
+        assert_eq!(state.status, FixedRecurringStatus::Active);
+    }
+
+    #[test]
+    fn revoked_authority_registry_invalidates_existing_permission_actions() {
+        let mut state = initialized();
+        let identity = identity();
+        let registry_bytes = authority_registry_bytes(&identity, 1);
+        let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
+
+        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, 0).is_err());
+        assert!(state.terminalize(&identity.authority_registry, registry, 1, 0).is_err());
+        assert_eq!(state.revision, 0);
+        assert_eq!(state.status, FixedRecurringStatus::Active);
+    }
+
+    #[test]
+    fn terminal_revoke_is_monotonic_and_blocks_transfer_or_revoke_replay() {
+        let mut state = initialized();
+        let identity = identity();
+        let registry_bytes = authority_registry_bytes(&identity, 0);
+        let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
+
+        assert_eq!(state.terminalize(&identity.authority_registry, registry, 1, 0).unwrap(), 1);
+        assert_eq!(state.status, FixedRecurringStatus::Terminal);
+        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, 1).is_err());
+        assert!(state.terminalize(&identity.authority_registry, registry, 1, 1).is_err());
+        assert_eq!(state.revision, 1);
+        assert_eq!(state.status, FixedRecurringStatus::Terminal);
+    }
+
+    #[test]
+    fn revision_overflow_does_not_partially_commit_a_transition() {
+        let mut state = initialized();
+        state.revision = u64::MAX;
+        let identity = identity();
+        let registry_bytes = authority_registry_bytes(&identity, 0);
+        let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
+
+        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, u64::MAX).is_err());
+        assert_eq!(state.revision, u64::MAX);
+        assert_eq!(state.status, FixedRecurringStatus::Active);
+
+        assert!(state.terminalize(&identity.authority_registry, registry, 1, u64::MAX).is_err());
+        assert_eq!(state.revision, u64::MAX);
+        assert_eq!(state.status, FixedRecurringStatus::Active);
     }
 
     #[test]
@@ -341,84 +552,5 @@ mod tests {
         assert_strict_payload!(DraftFixedTransferV2Data);
         assert_strict_payload!(DraftRecurringTransferV2Data);
         assert_strict_payload!(DraftDelegationRevokeV2Data);
-    }
-
-    #[test]
-    fn identity_requires_the_canonical_authority_registry_and_live_generation() {
-        let mut wrong_registry = identity();
-        wrong_registry.authority_registry = addr(9);
-        assert!(FixedRecurringLifecycle::new(wrong_registry).is_err());
-
-        let mut zero_generation = identity();
-        zero_generation.authority_generation = 0;
-        assert!(FixedRecurringLifecycle::new(zero_generation).is_err());
-    }
-
-    #[test]
-    fn identity_rejects_substitution_of_each_permission_component() {
-        let state = initialized();
-        let original = identity();
-
-        let mut variants = [original; 8];
-        variants[0].kind = FixedRecurringKind::Recurring;
-        variants[1].delegation = addr(10);
-        variants[2].subscriber = addr(11);
-        variants[3].delegatee = addr(12);
-        variants[4].mint = addr(13);
-        variants[5].source_token_account = addr(14);
-        variants[6].authority_registry = addr(15);
-        variants[7].authority_generation = 2;
-
-        for candidate in variants {
-            assert!(state.validate_identity(&candidate).is_err());
-        }
-        assert!(state.validate_identity(&original).is_ok());
-    }
-
-    #[test]
-    fn each_successful_transfer_consumes_a_one_shot_revision() {
-        let mut state = initialized();
-
-        assert_eq!(state.consume_transfer(1, 0).unwrap(), 1);
-        assert!(state.consume_transfer(1, 0).is_err());
-        assert_eq!(state.revision, 1);
-
-        assert_eq!(state.consume_transfer(1, 1).unwrap(), 2);
-        assert_eq!(state.revision, 2);
-    }
-
-    #[test]
-    fn authority_reauthorization_does_not_revive_an_old_permission() {
-        let mut state = initialized();
-
-        assert!(state.consume_transfer(2, 0).is_err());
-        assert_eq!(state.revision, 0);
-        assert_eq!(state.status, FixedRecurringStatus::Active);
-    }
-
-    #[test]
-    fn terminal_revoke_is_monotonic_and_blocks_transfer_or_revoke_replay() {
-        let mut state = initialized();
-
-        assert_eq!(state.terminalize(1, 0).unwrap(), 1);
-        assert_eq!(state.status, FixedRecurringStatus::Terminal);
-        assert!(state.consume_transfer(1, 1).is_err());
-        assert!(state.terminalize(1, 1).is_err());
-        assert_eq!(state.revision, 1);
-        assert_eq!(state.status, FixedRecurringStatus::Terminal);
-    }
-
-    #[test]
-    fn revision_overflow_does_not_partially_commit_a_transition() {
-        let mut state = initialized();
-        state.revision = u64::MAX;
-
-        assert!(state.consume_transfer(1, u64::MAX).is_err());
-        assert_eq!(state.revision, u64::MAX);
-        assert_eq!(state.status, FixedRecurringStatus::Active);
-
-        assert!(state.terminalize(1, u64::MAX).is_err());
-        assert_eq!(state.revision, u64::MAX);
-        assert_eq!(state.status, FixedRecurringStatus::Active);
     }
 }

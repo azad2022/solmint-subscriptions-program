@@ -190,8 +190,10 @@ impl FixedRecurringLifecycle {
         registry: &AuthorityConsentRegistry,
         expected_generation: u64,
         expected_revision: u64,
+        now_ts: i64,
+        not_after_ts: i64,
     ) -> Result<u64, ProgramError> {
-        self.validate_action(registry_address, registry, expected_generation, expected_revision)?;
+        self.validate_action(registry_address, registry, expected_generation, expected_revision, now_ts, not_after_ts)?;
         let next_revision = self.revision.checked_add(1).ok_or(SubscriptionsError::ArithmeticOverflow)?;
         self.revision = next_revision;
         self.status = FixedRecurringStatus::Terminal;

@@ -70,7 +70,10 @@ impl FixedRecurringLifecycle {
         identity: FixedRecurringIdentity,
         registry_address: &Address,
         registry: &AuthorityConsentRegistry,
+        now_ts: i64,
+        not_after_ts: i64,
     ) -> Result<Self, ProgramError> {
+        AuthorityConsentRegistry::validate_action_deadline(now_ts, not_after_ts)?;
         if identity.authority_generation == 0 {
             return Err(SubscriptionsError::StaleAuthorityGeneration.into());
         }
@@ -142,7 +145,10 @@ impl FixedRecurringLifecycle {
         registry: &AuthorityConsentRegistry,
         expected_generation: u64,
         expected_revision: u64,
+        now_ts: i64,
+        not_after_ts: i64,
     ) -> Result<(), ProgramError> {
+        AuthorityConsentRegistry::validate_action_deadline(now_ts, not_after_ts)?;
         Self::validate_live_authority_registry(&self.identity, registry_address, registry, expected_generation)?;
         if self.status != FixedRecurringStatus::Active {
             return Err(SubscriptionsError::Unauthorized.into());
@@ -164,8 +170,10 @@ impl FixedRecurringLifecycle {
         registry: &AuthorityConsentRegistry,
         expected_generation: u64,
         expected_revision: u64,
+        now_ts: i64,
+        not_after_ts: i64,
     ) -> Result<u64, ProgramError> {
-        self.validate_action(registry_address, registry, expected_generation, expected_revision)?;
+        self.validate_action(registry_address, registry, expected_generation, expected_revision, now_ts, not_after_ts)?;
         let next_revision = self.revision.checked_add(1).ok_or(SubscriptionsError::ArithmeticOverflow)?;
         self.revision = next_revision;
         Ok(next_revision)
@@ -357,7 +365,7 @@ mod tests {
         let identity = identity();
         let registry_bytes = authority_registry_bytes(&identity, 0);
         let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
-        FixedRecurringLifecycle::new(identity, &identity.authority_registry, registry).unwrap()
+        FixedRecurringLifecycle::new(identity, &identity.authority_registry, registry, 1_000, 1_900).unwrap()
     }
 
     #[test]
@@ -368,15 +376,70 @@ mod tests {
 
         let mut wrong_registry = original;
         wrong_registry.authority_registry = addr(9);
-        assert!(FixedRecurringLifecycle::new(wrong_registry, &original.authority_registry, registry).is_err());
+        assert!(FixedRecurringLifecycle::new(wrong_registry, &original.authority_registry, registry, 1_000, 1_900).is_err());
 
         let mut zero_generation = original;
         zero_generation.authority_generation = 0;
-        assert!(FixedRecurringLifecycle::new(zero_generation, &original.authority_registry, registry).is_err());
+        assert!(FixedRecurringLifecycle::new(zero_generation, &original.authority_registry, registry, 1_000, 1_900).is_err());
 
         let revoked_bytes = authority_registry_bytes(&original, 1);
         let revoked = AuthorityConsentRegistry::load(&revoked_bytes).unwrap();
-        assert!(FixedRecurringLifecycle::new(original, &original.authority_registry, revoked).is_err());
+        assert!(FixedRecurringLifecycle::new(original, &original.authority_registry, revoked, 1_000, 1_900).is_err());
+    }
+
+    #[test]
+    fn lifecycle_creation_and_actions_enforce_bounded_deadlines() {
+        let identity = identity();
+        let registry_bytes = authority_registry_bytes(&identity, 0);
+        let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
+
+        assert!(
+            FixedRecurringLifecycle::new(identity, &identity.authority_registry, registry, 1_000, 999).is_err()
+        );
+        assert!(
+            FixedRecurringLifecycle::new(identity, &identity.authority_registry, registry, 1_000, 87_401).is_err()
+        );
+
+        let mut state =
+            FixedRecurringLifecycle::new(identity, &identity.authority_registry, registry, 1_000, 87_400).unwrap();
+
+        assert!(
+            state
+                .consume_transfer(&identity.authority_registry, registry, 1, 0, 1_000, 999)
+                .is_err()
+        );
+        assert!(
+            state
+                .consume_transfer(&identity.authority_registry, registry, 1, 0, 1_000, 87_401)
+                .is_err()
+        );
+        assert_eq!(state.revision, 0);
+
+        // Equality at the maximum 24-hour boundary is accepted by the shared Registry rule.
+        assert_eq!(
+            state
+                .consume_transfer(&identity.authority_registry, registry, 1, 0, 1_000, 87_400)
+                .unwrap(),
+            1
+        );
+
+        assert!(
+            state
+                .terminalize(&identity.authority_registry, registry, 1, 1, 1_000, 999)
+                .is_err()
+        );
+        assert!(
+            state
+                .terminalize(&identity.authority_registry, registry, 1, 1, 1_000, 87_401)
+                .is_err()
+        );
+        assert_eq!(
+            state
+                .terminalize(&identity.authority_registry, registry, 1, 1, 1_000, 87_400)
+                .unwrap(),
+            2
+        );
+        assert_eq!(state.status, FixedRecurringStatus::Terminal);
     }
 
     #[test]
@@ -408,7 +471,7 @@ mod tests {
         let registry_bytes = authority_registry_bytes(&identity(), 0);
         let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
 
-        assert!(FixedRecurringLifecycle::new(substituted_identity, &substituted_identity.authority_registry, registry)
+        assert!(FixedRecurringLifecycle::new(substituted_identity, &substituted_identity.authority_registry, registry, 1_000, 1_900)
             .is_err());
     }
 
@@ -419,11 +482,11 @@ mod tests {
         let registry_bytes = authority_registry_bytes(&identity, 0);
         let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
 
-        assert_eq!(state.consume_transfer(&identity.authority_registry, registry, 1, 0).unwrap(), 1);
-        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, 0).is_err());
+        assert_eq!(state.consume_transfer(&identity.authority_registry, registry, 1, 0, 1_000, 1_900).unwrap(), 1);
+        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, 0, 1_000, 1_900).is_err());
         assert_eq!(state.revision, 1);
 
-        assert_eq!(state.consume_transfer(&identity.authority_registry, registry, 1, 1).unwrap(), 2);
+        assert_eq!(state.consume_transfer(&identity.authority_registry, registry, 1, 1, 1_000, 1_900).unwrap(), 2);
         assert_eq!(state.revision, 2);
     }
 
@@ -434,7 +497,7 @@ mod tests {
         let registry_bytes = authority_registry_bytes(&identity, 2);
         let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
 
-        assert!(state.consume_transfer(&identity.authority_registry, registry, 3, 0).is_err());
+        assert!(state.consume_transfer(&identity.authority_registry, registry, 3, 0, 1_000, 1_900).is_err());
         assert_eq!(state.revision, 0);
         assert_eq!(state.status, FixedRecurringStatus::Active);
     }
@@ -446,8 +509,8 @@ mod tests {
         let registry_bytes = authority_registry_bytes(&identity, 1);
         let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
 
-        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, 0).is_err());
-        assert!(state.terminalize(&identity.authority_registry, registry, 1, 0).is_err());
+        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, 0, 1_000, 1_900).is_err());
+        assert!(state.terminalize(&identity.authority_registry, registry, 1, 0, 1_000, 1_900).is_err());
         assert_eq!(state.revision, 0);
         assert_eq!(state.status, FixedRecurringStatus::Active);
     }
@@ -459,10 +522,10 @@ mod tests {
         let registry_bytes = authority_registry_bytes(&identity, 0);
         let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
 
-        assert_eq!(state.terminalize(&identity.authority_registry, registry, 1, 0).unwrap(), 1);
+        assert_eq!(state.terminalize(&identity.authority_registry, registry, 1, 0, 1_000, 1_900).unwrap(), 1);
         assert_eq!(state.status, FixedRecurringStatus::Terminal);
-        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, 1).is_err());
-        assert!(state.terminalize(&identity.authority_registry, registry, 1, 1).is_err());
+        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, 1, 1_000, 1_900).is_err());
+        assert!(state.terminalize(&identity.authority_registry, registry, 1, 1, 1_000, 1_900).is_err());
         assert_eq!(state.revision, 1);
         assert_eq!(state.status, FixedRecurringStatus::Terminal);
     }
@@ -475,11 +538,11 @@ mod tests {
         let registry_bytes = authority_registry_bytes(&identity, 0);
         let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
 
-        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, u64::MAX).is_err());
+        assert!(state.consume_transfer(&identity.authority_registry, registry, 1, u64::MAX, 1_000, 1_900).is_err());
         assert_eq!(state.revision, u64::MAX);
         assert_eq!(state.status, FixedRecurringStatus::Active);
 
-        assert!(state.terminalize(&identity.authority_registry, registry, 1, u64::MAX).is_err());
+        assert!(state.terminalize(&identity.authority_registry, registry, 1, u64::MAX, 1_000, 1_900).is_err());
         assert_eq!(state.revision, u64::MAX);
         assert_eq!(state.status, FixedRecurringStatus::Active);
     }

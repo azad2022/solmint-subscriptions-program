@@ -75,11 +75,8 @@ impl FixedRecurringLifecycle {
             return Err(SubscriptionsError::StaleAuthorityGeneration.into());
         }
 
-        let (expected_registry, _) = AuthorityConsentRegistry::find_pda(
-            &identity.subscriber,
-            &identity.mint,
-            &identity.source_token_account,
-        );
+        let (expected_registry, _) =
+            AuthorityConsentRegistry::find_pda(&identity.subscriber, &identity.mint, &identity.source_token_account);
         if expected_registry != identity.authority_registry {
             return Err(SubscriptionsError::LifecycleRegistryIdentityMismatch.into());
         }
@@ -330,15 +327,9 @@ mod tests {
 
     /// mode 0 = active generation 1; mode 1 = revoked generation 2;
     /// mode 2 = active generation 3 after revoke + explicit reauthorization.
-    fn authority_registry_bytes(
-        identity: &FixedRecurringIdentity,
-        mode: u8,
-    ) -> [u8; AuthorityConsentRegistry::LEN] {
-        let (registry_address, bump) = AuthorityConsentRegistry::find_pda(
-            &identity.subscriber,
-            &identity.mint,
-            &identity.source_token_account,
-        );
+    fn authority_registry_bytes(identity: &FixedRecurringIdentity, mode: u8) -> [u8; AuthorityConsentRegistry::LEN] {
+        let (registry_address, bump) =
+            AuthorityConsentRegistry::find_pda(&identity.subscriber, &identity.mint, &identity.source_token_account);
         assert_eq!(registry_address, identity.authority_registry);
 
         let mut bytes = [0u8; AuthorityConsentRegistry::LEN];
@@ -423,12 +414,8 @@ mod tests {
         let registry = AuthorityConsentRegistry::load(&registry_bytes).unwrap();
 
         assert!(
-            FixedRecurringLifecycle::new(
-                substituted_identity,
-                &substituted_identity.authority_registry,
-                registry,
-            )
-            .is_err()
+            FixedRecurringLifecycle::new(substituted_identity, &substituted_identity.authority_registry, registry)
+                .is_err()
         );
     }
 

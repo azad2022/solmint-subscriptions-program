@@ -314,6 +314,8 @@ suite('Squads v4 delayed proposal against VNext authority registry', () => {
                     `SQUADS_TOMBSTONE_REVOKE_FAILED: signature=${revokeSignature}; confirmation=${JSON.stringify(revokeConfirmation.value.err)}; transaction=${JSON.stringify(revokeTransaction?.meta?.err)}; logs=${(revokeTransaction?.meta?.logMessages ?? []).join(' | ')}`,
                 );
             }
+            expect(revokeTransaction, 'confirmed tombstone revoke transaction must be indexed').not.toBeNull();
+            expect(revokeTransaction?.meta, 'confirmed tombstone revoke must include transaction metadata').not.toBeNull();
             expect(revokeTransaction?.meta?.err ?? null).toBeNull();
 
             const [revokeProposalPda] = squads.getProposalPda({

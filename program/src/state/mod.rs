@@ -7,6 +7,7 @@
 pub mod authority_consent_registry;
 pub mod common;
 pub mod fixed_delegation;
+pub(crate) mod fixed_recurring_lifecycle;
 pub mod header;
 pub mod plan;
 pub mod plan_revision_registry;

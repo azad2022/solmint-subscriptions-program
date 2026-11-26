@@ -739,3 +739,40 @@ VNext Authority, Plan and Subscription runtime handlers are present. Plan create
 - The assertions are unchanged: tombstone revoke must succeed; the delayed approved authorization must fail with `StaleAuthorityGeneration`; proposal state, persistent Registry generation/nonces and token delegate/balance must remain as specified. No expected failure is converted into success and no security check is skipped.
 - A successful confirmation must also return non-null transaction and metadata; missing transaction indexing fails closed instead of being treated as a successful revoke.
 - This is a test-harness observability correction, not a claimed protocol fix. The actual cause of the earlier Custom(141) remains **UNKNOWN** until the new exact-source CI log includes the confirmed revoke transaction diagnostics. No Program runtime or ABI was changed in this checkpoint.
+
+
+## 2026-11-20 — Exact-source CI closure for Squads tombstone-revoke diagnostic
+
+### Exact source and workflow identity
+- Program repository: `azad2022/solmint-subscriptions-program`, branch `feat/solmint-g1-authority-vnext`, exact source HEAD `c70424da57f0f1a2f5238a6a8025b89f3f03812e`.
+- Product repository: `azad2022/solsite`, branch `feat/pay-subscription-billing`, exact PR head `0e5369c86a787e257bb76512479eac597111d06b`.
+- Product CI run `44758480405` completed **SUCCESS** after the only cancelled job (`subscription-production-migration-cli`) was retried by itself. The first attempt had reached the 10-minute job timeout while the Supabase CLI setup action was running; retry job `140058596959` completed setup and exact CLI version verification successfully. No already-successful job was rerun.
+- The workflow's four companion checks also completed successfully: Production Build `44758480397`, Database Security `44758480616`, Devnet E2E `44758480443`, Mainnet Read-only `44758480315`.
+
+### Exact-source Program evidence
+- **PASS — `subscription-vnext-squads-sdk`**, job `140058649602`:
+  - staged Squads wallet SDK tests: 6 passed / 0 failed;
+  - delayed Squads proposal integration: 2 passed / 0 failed, including successful tombstone revocation before execution of the previously approved stale authorization, and rejection of an approved authorization after its on-chain deadline;
+  - Agave durable-nonce rollback regression: 1 passed / 0 failed.
+- **PASS — `subscription-vnext-authority-registry`**, job `140058600997`:
+  - Program Rust formatting and integration-test formatting passed;
+  - Program unit tests: 109 passed / 0 failed;
+  - VNext integration selection: 26 passed / 0 failed / 5 ignored in that selection; separate legacy-authority generation selection: 3 passed / 0 failed;
+  - immutable v0.5.0 historical integration suite: 274 passed / 0 failed;
+  - dedicated immutable-v0.5.0 Legacy isolation run: **5 passed / 0 failed**, including non-ATA Authority, Fixed/Recurring create/transfer/revoke isolation, Plan/Subscription lifecycle isolation, VNext discriminator rejection and Token-2022 TransferHook positive-control behavior;
+  - exact VNext SBF build, immutable Legacy SBF build, reproducible-build artifact consumption and generated-vs-committed Codama IDL structural check completed successfully.
+- The five Legacy isolation tests were already present in `tests/integration-tests/src/test_vnext_legacy_isolation.rs`; this checkpoint records their execution and does not add duplicate coverage.
+
+### Corrected interpretation
+- The Squads diagnostic-harness correction is now **PASS**: the same approved Vault execution path was submitted with raw RPC so the test could retain its signature and inspect confirmed metadata; the revoke and stale-proposal assertions both passed.
+- This proves the tested tombstone ordering on the exact fork source under the current local Surfpool/Squads integration. It does not prove a new Program ID, Mainnet deployment, customer migration or all smart-wallet providers.
+- The internal Fixed/Recurring transition-model tests executed as part of the Program unit suite, but the persistent per-delegation account and callable Fixed/Recurring VNext handlers remain separate and unimplemented.
+
+### Current phase disposition
+- **PASS:** prior Squads delayed-tombstone regression stage, exact-source Program checks and full current Product CI workflow.
+- **BLOCKED:** Fixed/Recurring ABI freeze remains blocked by the unresolved explicit Program identity/deployment-path decision and the persistent lifecycle Registry account-version/revoke plus rent-payer/sponsorship contract. The candidate payloads in §8.4 remain non-ABI proposal material.
+- **NOT IMPLEMENTED:** persistent Fixed/Recurring Registry serialization/PDA/account discriminator, VNext Fixed/Recurring Create/Transfer/Revoke handlers, dispatcher/IDL/client generation and dedicated adversarial LiteSVM state-transition suite.
+- **UNKNOWN:** exact real-world custody/identity of any future independent Program ID remains unproven; no new Program keypair has been generated.
+
+### Mutation boundary
+No Program runtime handler, public ABI, Program ID/keypair, Deployment, Devnet/Mainnet account, Production database/configuration, signer, customer consent, accounting entry or customer funds changed. No merge or release occurred; both feature PRs remain OPEN / DRAFT.

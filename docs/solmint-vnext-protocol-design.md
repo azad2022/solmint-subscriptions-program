@@ -663,7 +663,7 @@ Tests must run against the exact VNext Program source SHA and, where relevant, t
 
 The existing v0.5.0 Program ID is De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44. The recorded Mainnet ProgramData governance path resolves to Squads V4 with a 3-of-5 threshold and zero-second timelock; member identity/custody is UNKNOWN. SolMint must not assume it can unilaterally upgrade this Program ID.
 
-The independent route is therefore a new Program ID for VNext unless legitimate, separately verified upgrade authority is established. The exact VNext Program ID must not be invented or generated in this design document. Any keypair generation, authority assignment, Program deployment, upgrade, Squads proposal or transaction requires separate explicit authorization and key-custody procedure.
+The owner selected the independent route (Path B) on 2026-11-26 as the fastest independently controllable architecture path. The architecture choice is now RECORDED; the exact VNext Program ID, keypair, custody and deployment identity remain unresolved and must not be invented or generated in this design document. Any keypair generation, authority assignment, Program deployment, upgrade, Squads proposal or transaction requires separate explicit authorization and key-custody procedure.
 
 ## 12. Design decisions still OPEN
 
@@ -776,3 +776,58 @@ VNext Authority, Plan and Subscription runtime handlers are present. Plan create
 
 ### Mutation boundary
 No Program runtime handler, public ABI, Program ID/keypair, Deployment, Devnet/Mainnet account, Production database/configuration, signer, customer consent, accounting entry or customer funds changed. No merge or release occurred; both feature PRs remain OPEN / DRAFT.
+
+
+## 2026-11-26 — Owner decision: independent Path B selected
+
+### Decision and exact repository baseline
+
+The owner selected **Path B: VNext under a new independent SolMint-owned Program ID**. The reason is operational control: Path A depends on the existing Mainnet Program's Squads v4 3-of-5 governance path, while the real-world identity/custody of its members and SolMint's authority to execute an upgrade remain UNKNOWN.
+
+- Program repository: `azad2022/solmint-subscriptions-program`.
+- Work branch / PR: `feat/solmint-g1-authority-vnext`, PR #1 OPEN / DRAFT / NOT MERGED.
+- Program PR HEAD before this checkpoint: `f13f15be38a6a04b510516f67035238b10b46ec4`.
+- Last executable Program source checkpoint exercised by Product CI: `c70424da57f0f1a2f5238a6a8025b89f3f03812e`. The PR commit after that executable source is documentation-only.
+- Immutable v0.5.0 baseline: `364a41976c33347d092902443bbec2def9227e75`.
+- Product G1 plan/PR: `azad2022/solsite`, `feat/pay-subscription-billing`, PR #366. Product main remains `514d3401d8d725be106ab0c83557f8e43cdff13e`.
+
+This resolves the **architecture path choice** required by §8.4.3. It does not establish a deployable Program identity or complete ABI freeze.
+
+### Path-B protocol consequences
+
+1. VNext will have a new Program ID and new PDA namespace. It cannot reinterpret, own, close or migrate legacy v0.5.0 Plan, Authority, Subscription, Fixed or Recurring PDAs. The old Program remains independently callable.
+2. VNext Authority and permission state must bind to a dedicated customer-owned source token account, the exact mint and token program. The current non-ATA design is a candidate isolation boundary, not yet a proof. A new Program ID alone does not isolate a token account from an old program that can still reach it.
+3. The immutable v0.5.0 binary must be tested against every relevant path: Init/Close/Subscribe/Revoke Authority, Fixed/Recurring Create/Transfer/Revoke, account substitutions and remaining-account handling. Each case must assert both rejection and unchanged source delegate, balances and VNext-owned Registry/Authority state. Existing legacy isolation evidence is partial and must not be generalized beyond the exact tests executed.
+4. New VNext permissions require fresh customer signatures and new Program-owned accounts. Merchant Plans require fresh Merchant creation/signature. Old consents, signatures, allowances, period state and event history are not VNext consent or payment evidence.
+5. A migration cohort must first stop or claim-protect old Billing/Collector work, inventory and reconcile every old authorized Puller and unresolved signed/proposed action, then obtain a customer-signed fund movement to the proven isolated VNext source account. No automatic sweep, server custody or overlapping old/new collection is allowed.
+6. Under Path B, the old Program's legacy `RevokeDelegation` cannot be treated as a VNext lifecycle operation. VNext revoke must validate and terminalize its own persistent lifecycle record atomically with closing/refunding the separate VNext delegation account. The legacy and VNext accounts/dispatchers remain different Program ownership/version boundaries.
+
+### Identity and authorization boundary
+
+The source still declares the legacy Program ID `De1egAFMkMWZSN5rYXRj9CAdheBamobVNubTsi9avR44`. No new Program ID/keypair exists in this checkpoint.
+
+This architecture selection does **not** authorize:
+- generating a keypair or deriving/assigning the new Program ID;
+- choosing, loading or rotating a deployment/upgrade key, or creating a persistent signer;
+- assigning or transferring Program upgrade authority;
+- creating a Squads proposal or submitting any Devnet/Mainnet transaction;
+- deploying/upgrading a Program or migrating customer funds/consent.
+
+Those require a separate explicit authorization and an independently reviewed key-custody procedure. No key, deployment or chain state was changed.
+
+### Fixed/Recurring design gates after Path B selection
+
+The remaining §8.4 blockers are now more precisely scoped:
+
+- **BLOCKED — persistent Registry rent policy:** a permanent per-delegation tombstone must survive closure and rent recovery of the larger Fixed/Recurring account. The actual rent payer, optional sponsor, locked rent-exempt principal, excess-lamport handling and customer/sponsor disclosure must be decided together. The sponsor must never obtain authority to revoke or block subscriber revocation. Do not silently charge the customer or promise recovery of a permanently retained rent floor.
+- **BLOCKED — VNext Registry and version boundary:** exact PDA seeds, kind/identity tuple, account discriminator/version, stored Authority generation, revision, fixed account order and the callable VNext Revoke path remain unfrozen. The current `fixed_recurring_lifecycle.rs` is an in-memory transition model, not persistent account state.
+- **BLOCKED — complete legacy source isolation:** current tests do not prove all paths can never reach the selected VNext source account. Complete exact-binary adversarial coverage before treating non-ATA as safe.
+- **NOT IMPLEMENTED:** persistent Registry serialization/PDA, VNext Fixed/Recurring Create/Transfer/Revoke handlers and dispatcher routes, Codama IDL/client, and their exact-source LiteSVM state-transition suite.
+
+Therefore §8.4.3's selected path prerequisite is **PASS at architecture-decision level**, while final ABI freeze remains **BLOCKED**. No candidate payload in §8.4.5 is promoted to a public ABI by this decision.
+
+### Validation and mutation boundary
+
+The focused exact-source Product CI evidence remains the prior run `44758480405`, which tested Program executable source `c70424da57f0f1a2f5238a6a8025b89f3f03812e`. It passed the recorded Squads delayed-proposal and Authority Registry suites, including the internal Fixed/Recurring model unit tests. The current Product documentation HEAD's general CI wrapper is green but skipped specialized Subscription jobs by changed-path scope; it is not a new Fixed/Recurring ABI or Program identity test.
+
+No Program runtime handler, ABI, Program ID/keypair, signer, Deployment, Devnet/Mainnet state, Production database/configuration, customer consent, accounting entry or customer funds changed. No merge or release occurred. Local Working Tree is UNKNOWN through the remote connector.

@@ -256,7 +256,7 @@ fn assert_vnext_lineage_unchanged(
     let source_after = litesvm.get_account(source).unwrap();
     assert_eq!(source_after.data, source_data, "legacy path mutated VNext source token bytes");
     assert_eq!(source_after.lamports, source_lamports, "legacy path changed VNext source lamports");
-    let source_state = TokenAccount::unpack(&source_after.data).unwrap();
+    let source_state = fetch_account::<TokenAccount>(litesvm, source);
     assert_eq!(source_state.delegate.unwrap(), expected_delegate);
     assert_eq!(source_state.delegated_amount, u64::MAX);
 }

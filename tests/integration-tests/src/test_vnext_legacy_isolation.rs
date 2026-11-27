@@ -8,7 +8,10 @@ use solana_program_pack::Pack;
 use solana_pubkey::Pubkey;
 use solana_signer::Signer;
 use solana_transaction::Transaction;
-use spl_token_2022_interface::{extension::ExtensionType, state::Account as TokenAccount};
+use spl_token_2022_interface::{
+    extension::{BaseStateWithExtensionsMut, ExtensionType, StateWithExtensionsMut},
+    state::Account as TokenAccount,
+};
 
 use crate::{
     instructions::create_plan::{PlanData, PlanTerms},
@@ -110,10 +113,18 @@ fn seed_vnext_non_ata_lineage(
     }
 
     let mut source_account = litesvm.get_account(source).unwrap();
-    let mut source_state = TokenAccount::unpack(&source_account.data).unwrap();
-    source_state.delegate = Some(authority).into();
-    source_state.delegated_amount = u64::MAX;
-    TokenAccount::pack(source_state, &mut source_account.data).unwrap();
+    if token_program == &TOKEN_2022_PROGRAM_ID {
+        let mut source_state =
+            StateWithExtensionsMut::<TokenAccount>::unpack(&mut source_account.data).unwrap();
+        source_state.base.delegate = Some(authority).into();
+        source_state.base.delegated_amount = u64::MAX;
+        source_state.pack_base();
+    } else {
+        let mut source_state = TokenAccount::unpack(&source_account.data).unwrap();
+        source_state.delegate = Some(authority).into();
+        source_state.delegated_amount = u64::MAX;
+        TokenAccount::pack(source_state, &mut source_account.data).unwrap();
+    }
     litesvm.set_account(*source, source_account).unwrap();
 
     (registry, authority)

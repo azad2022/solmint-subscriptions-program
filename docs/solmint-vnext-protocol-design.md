@@ -483,7 +483,15 @@ Minimum lifecycle state:
 - a checked monotonic revision/action value;
 - a permanent tombstone after revoke/terminal close.
 
-The lifecycle record must survive closure and rent recovery of the larger delegation account. Its rent-payer and sponsorship policy is a separate product/security decision; do not silently charge a customer, let a sponsor control revocation, or assume the permanent record can be reclaimed. The closeable Fixed/Recurring account may retain a separately approved rent-payer field and recovery policy.
+The lifecycle record must survive closure and rent recovery of the larger delegation account. The owner delegated the rent-model choice to engineering on 2026-11-27; the selected policy is:
+
+- The subscriber funds creation of the permanent Lifecycle Registry. The Registry records its exact rent payer for audit, is never closed, and retains its required rent-exempt principal for the life of the tombstone. There is no ordinary revoke refund, close, sweep or excess-lamport recovery in this initial design.
+- The separate closeable Fixed/Recurring delegation account is Customer-funded by default and must record the exact payer. Optional third-party rent sponsorship remains a product requirement but is disabled until explicit payer consent/disclosure, per-account and aggregate exposure limits, atomic quota accounting, durable payer/account/refund audit facts and tested recovery enforcement exist. SolMint treasury, Collector and Relayer are not implicit Rent or network-fee payers.
+- On valid customer terminal-revoke or protocol-authorized recovery, rent from the closeable delegation account may return only to its exact recorded payer. A sponsor cannot veto, delay or force-close a healthy customer permission. Preserve the pinned v0.5.0 recovery restrictions where compatible with the VNext state machine: Fixed recovery only after expiry or full spend; Recurring sponsor recovery only after finite expiry; non-expiring abandoned recovery requires terminal Authority. VNext handlers must independently enforce these conditions and must not assume legacy behavior without exact-source tests.
+- Transaction network-fee payer is independent of instruction-level Rent payer and follows the existing operation-specific Customer/Merchant rule. Collector may be the authorized Puller signer but must not spend SolMint-funded SOL.
+- The Rent-exempt minimum is computed from the final serialized account length and the target cluster's Rent sysvar at execution time. No lamport amount, account field, payer account-meta position, PDA seed or ABI offset is assigned by this policy note.
+
+This closes the policy selection only. Persistent Registry serialization, sponsor control-plane, exact VNext close/refund handlers, account-meta contract and Program identity/deployment boundary remain implementation/ABI gates.
 
 The Create path must initialize the lifecycle record exactly once and fail if any record for that logical identity already exists, including a terminal one. The Transfer path must verify the record's exact identity, Active status, Authority generation and expected revision. A successful transfer and the corresponding allowance/period update must advance the lifecycle revision in the same atomic transaction. The Revoke path must compare the signed expected revision, advance it with checked arithmetic, mark the record terminal and close/refund the closeable delegation in the same transaction. CPI failure must roll back both the token transfer and state/revision changes.
 
@@ -577,7 +585,7 @@ At minimum, add exact-source LiteSVM cases for:
 ### 8.4.8 Gate disposition
 
 - **PASS:** the exact legacy state sizes, payload widths, PDA seed shape, old create/revoke behavior, Registry identity model and current fail-closed dispatcher were source-inspected.
-- **BLOCKED:** final ABI freeze, because Program identity/deployment path and the per-delegation tombstone/account-version/revoke boundary must be selected together.
+- **BLOCKED:** final ABI freeze, because Program identity/deployment path and the per-delegation tombstone/account-version/revoke boundary must be selected together. The high-level rent policy is now selected (2026-11-27); serialized payer representation, sponsor enforcement and close/refund account ordering remain unassigned.
 - **NOT IMPLEMENTED:** Fixed/Recurring VNext account types, lifecycle registry, create/transfer/revoke handlers, IDL/client generation and the adversarial matrix.
 - **UNKNOWN:** execution of new Rust/LiteSVM tests for this design; no runtime code was changed or tested in this checkpoint.
 

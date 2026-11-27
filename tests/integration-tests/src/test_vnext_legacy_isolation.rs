@@ -945,13 +945,8 @@ fn vnext_legacy_program_executes_token_2022_transfer_hook_with_extra_accounts() 
     let subscriber_ata = init_ata(&mut litesvm, mint, subscriber.pubkey(), 1_000_000);
     let merchant_ata = init_ata(&mut litesvm, mint, merchant.pubkey(), 0);
     let vnext_source = init_aux_token_account(&mut litesvm, mint, subscriber.pubkey(), 1_000_000);
-    let (authority_registry, vnext_authority) = seed_vnext_non_ata_lineage(
-        &mut litesvm,
-        &subscriber.pubkey(),
-        &mint,
-        &vnext_source,
-        &TOKEN_2022_PROGRAM_ID,
-    );
+    let (authority_registry, vnext_authority) =
+        seed_vnext_non_ata_lineage(&mut litesvm, &subscriber.pubkey(), &mint, &vnext_source, &TOKEN_2022_PROGRAM_ID);
     let (legacy_init, legacy_authority, _) = initialize_subscription_authority_action(&mut litesvm, &subscriber, mint);
     assert!(legacy_init.is_ok(), "legacy Token-2022 Authority initialization must succeed");
 

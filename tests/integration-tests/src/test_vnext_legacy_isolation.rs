@@ -9,7 +9,7 @@ use solana_pubkey::Pubkey;
 use solana_signer::Signer;
 use solana_transaction::Transaction;
 use spl_token_2022_interface::{
-    extension::{BaseStateWithExtensionsMut, ExtensionType, StateWithExtensionsMut},
+    extension::{ExtensionType, StateWithExtensionsMut},
     state::Account as TokenAccount,
 };
 

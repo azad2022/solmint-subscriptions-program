@@ -114,8 +114,7 @@ fn seed_vnext_non_ata_lineage(
 
     let mut source_account = litesvm.get_account(source).unwrap();
     if token_program == &TOKEN_2022_PROGRAM_ID {
-        let mut source_state =
-            StateWithExtensionsMut::<TokenAccount>::unpack(&mut source_account.data).unwrap();
+        let mut source_state = StateWithExtensionsMut::<TokenAccount>::unpack(&mut source_account.data).unwrap();
         source_state.base.delegate = Some(authority).into();
         source_state.base.delegated_amount = u64::MAX;
         source_state.pack_base();

@@ -59,11 +59,12 @@ fn seed_vnext_non_ata_lineage(
     subscriber: &Pubkey,
     mint: &Pubkey,
     source: &Pubkey,
+    token_program: &Pubkey,
 ) -> (Pubkey, Pubkey) {
     let subscriber_address = to_address(subscriber);
     let mint_address = to_address(mint);
     let source_address = to_address(source);
-    let token_program_address = to_address(&TOKEN_PROGRAM_ID);
+    let token_program_address = to_address(token_program);
 
     let (registry_address, registry_bump) =
         AuthorityConsentRegistry::find_pda(&subscriber_address, &mint_address, &source_address);
@@ -340,7 +341,7 @@ fn vnext_legacy_program_authority_and_transfer_routes_preserve_non_ata_lineage()
     assert_ne!(subscriber_ata, vnext_source, "test must use distinct ATA and non-ATA accounts");
 
     let (vnext_registry, vnext_authority) =
-        seed_vnext_non_ata_lineage(&mut litesvm, &subscriber.pubkey(), &mint, &vnext_source);
+        seed_vnext_non_ata_lineage(&mut litesvm, &subscriber.pubkey(), &mint, &vnext_source, &TOKEN_PROGRAM_ID);
     let registry_before = litesvm.get_account(&vnext_registry).unwrap();
     let authority_before = litesvm.get_account(&vnext_authority).unwrap();
     let source_before = litesvm.get_account(&vnext_source).unwrap();
@@ -532,7 +533,7 @@ fn vnext_legacy_program_plan_and_subscription_routes_preserve_vnext_lineage() {
     let vnext_source = init_aux_token_account(&mut litesvm, mint, subscriber.pubkey(), 2_000_000);
 
     let (authority_registry, vnext_authority) =
-        seed_vnext_non_ata_lineage(&mut litesvm, &subscriber.pubkey(), &mint, &vnext_source);
+        seed_vnext_non_ata_lineage(&mut litesvm, &subscriber.pubkey(), &mint, &vnext_source, &TOKEN_PROGRAM_ID);
     let (legacy_init, legacy_authority, _) = initialize_subscription_authority_action(&mut litesvm, &subscriber, mint);
     assert!(legacy_init.is_ok(), "legacy ATA authority setup must succeed for the control case");
 
@@ -943,7 +944,15 @@ fn vnext_legacy_program_executes_token_2022_transfer_hook_with_extra_accounts() 
 
     let subscriber_ata = init_ata(&mut litesvm, mint, subscriber.pubkey(), 1_000_000);
     let merchant_ata = init_ata(&mut litesvm, mint, merchant.pubkey(), 0);
-    let (legacy_init, _legacy_authority, _) = initialize_subscription_authority_action(&mut litesvm, &subscriber, mint);
+    let vnext_source = init_aux_token_account(&mut litesvm, mint, subscriber.pubkey(), 1_000_000);
+    let (authority_registry, vnext_authority) = seed_vnext_non_ata_lineage(
+        &mut litesvm,
+        &subscriber.pubkey(),
+        &mint,
+        &vnext_source,
+        &TOKEN_2022_PROGRAM_ID,
+    );
+    let (legacy_init, legacy_authority, _) = initialize_subscription_authority_action(&mut litesvm, &subscriber, mint);
     assert!(legacy_init.is_ok(), "legacy Token-2022 Authority initialization must succeed");
 
     let plan_id = 9002u64;
@@ -960,6 +969,60 @@ fn vnext_legacy_program_executes_token_2022_transfer_hook_with_extra_accounts() 
     let source_before = litesvm.get_account(&subscriber_ata).unwrap();
     let destination_before = litesvm.get_account(&merchant_ata).unwrap();
     let counter_before = litesvm.get_account(&counter).unwrap();
+    let authority_registry_before = litesvm.get_account(&authority_registry).unwrap();
+    let vnext_authority_before = litesvm.get_account(&vnext_authority).unwrap();
+    let vnext_source_before = litesvm.get_account(&vnext_source).unwrap();
+
+    // The immutable legacy Subscription route must reject a Token-2022
+    // non-ATA VNext source even when the caller supplies the exact TransferHook
+    // remaining accounts. A valid legacy ATA Subscription exists in this fixture.
+    let legacy_transfer_from_vnext_source = legacy_subscription_transfer_ix(
+        legacy_subscription,
+        legacy_plan,
+        legacy_authority,
+        vnext_source,
+        merchant_ata,
+        mint,
+        TOKEN_2022_PROGRAM_ID,
+        &subscriber.pubkey(),
+        &merchant.pubkey(),
+        100_000,
+        vec![
+            AccountMeta::new_readonly(TRANSFER_HOOK_EXAMPLE_PROGRAM_ID, false),
+            AccountMeta::new_readonly(validation_pda, false),
+            AccountMeta::new(counter, false),
+        ],
+    );
+    assert!(
+        !send_signed(&mut litesvm, &merchant, legacy_transfer_from_vnext_source),
+        "immutable legacy TransferSubscription must reject a Token-2022 VNext non-ATA source"
+    );
+
+    let subscription_after_non_ata = litesvm.get_account(&legacy_subscription).unwrap();
+    let source_after_non_ata = litesvm.get_account(&subscriber_ata).unwrap();
+    let destination_after_non_ata = litesvm.get_account(&merchant_ata).unwrap();
+    let counter_after_non_ata = litesvm.get_account(&counter).unwrap();
+    assert_eq!(subscription_after_non_ata.data, subscription_before.data);
+    assert_eq!(subscription_after_non_ata.lamports, subscription_before.lamports);
+    assert_eq!(source_after_non_ata.data, source_before.data);
+    assert_eq!(source_after_non_ata.lamports, source_before.lamports);
+    assert_eq!(destination_after_non_ata.data, destination_before.data);
+    assert_eq!(destination_after_non_ata.lamports, destination_before.lamports);
+    assert_eq!(counter_after_non_ata.data, counter_before.data);
+    assert_eq!(counter_after_non_ata.lamports, counter_before.lamports);
+    assert_vnext_lineage_unchanged(
+        &litesvm,
+        &authority_registry,
+        &authority_registry_before.data,
+        authority_registry_before.lamports,
+        &vnext_authority,
+        &vnext_authority_before.data,
+        vnext_authority_before.lamports,
+        &vnext_source,
+        &vnext_source_before.data,
+        vnext_source_before.lamports,
+        vnext_authority,
+    );
 
     let missing_hook_accounts =
         TransferSubscription::new(&mut litesvm, &merchant, subscriber.pubkey(), mint, legacy_subscription, legacy_plan)
@@ -996,4 +1059,17 @@ fn vnext_legacy_program_executes_token_2022_transfer_hook_with_extra_accounts() 
     assert_eq!(fetch_account::<TokenAccount>(&litesvm, &subscriber_ata).amount, 900_000);
     assert_eq!(fetch_account::<TokenAccount>(&litesvm, &merchant_ata).amount, 100_000);
     assert_eq!(litesvm.get_account(&counter).unwrap().data[0], 1, "legacy Token-2022 Hook must execute exactly once");
+    assert_vnext_lineage_unchanged(
+        &litesvm,
+        &authority_registry,
+        &authority_registry_before.data,
+        authority_registry_before.lamports,
+        &vnext_authority,
+        &vnext_authority_before.data,
+        vnext_authority_before.lamports,
+        &vnext_source,
+        &vnext_source_before.data,
+        vnext_source_before.lamports,
+        vnext_authority,
+    );
 }
